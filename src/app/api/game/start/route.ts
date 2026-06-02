@@ -10,16 +10,17 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}))
-    const teamAScore = body.team_a_score ?? 1000
-    const teamBScore = body.team_b_score ?? 1000
+    const teamAScore = body.team_a_score ?? 0
+    const teamBScore = body.team_b_score ?? 0
+    const startingTeam = body.starting_team ?? 'A'
 
     // Delete any existing sessions
     db.prepare('DELETE FROM game_sessions').run()
 
     const result = db.prepare(`
       INSERT INTO game_sessions (status, current_team, team_a_score, team_b_score, current_state)
-      VALUES ('wagering', 'A', ?, ?, '{}')
-    `).run(teamAScore, teamBScore)
+      VALUES ('wagering', ?, ?, ?, '{}')
+    `).run(startingTeam, teamAScore, teamBScore)
 
     const session = db.prepare('SELECT * FROM game_sessions WHERE id = ?').get(result.lastInsertRowid)
     const s = session as { current_state: string; [key: string]: unknown }
