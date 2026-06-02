@@ -1,0 +1,17 @@
+services:
+  gamely:
+    build: .
+    image: gamely:latest
+    container_name: gamely
+    ports:
+      - "3000:3000"
+    volumes:
+      - gamely_data:/data
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/data/game.db
+    restart: unless-stopped
+
+volumes:
+  gamely_data:
+    driver: local
