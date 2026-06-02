@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 
-const DB_PATH = path.join('/home/user/Gamely', 'game.db')
+const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'game.db')
 
 let _db: Database.Database | null = null
 
