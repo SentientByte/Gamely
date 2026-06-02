@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 interface GameOption {
   id: string
@@ -49,6 +50,7 @@ interface Contestant {
 const LABELS_AR = ['أ', 'ب', 'ج', 'د', 'هـ']
 
 export default function GamePage() {
+  const router = useRouter()
   const [session, setSession] = useState<Session | null>(null)
   const [contestants, setContestants] = useState<Contestant[]>([])
   const [selectedContestant, setSelectedContestant] = useState<string>('')
@@ -83,10 +85,19 @@ export default function GamePage() {
   }, [])
 
   useEffect(() => {
-    Promise.all([fetchState(), fetchContestants()]).finally(() => setLoading(false))
-    pollRef.current = setInterval(fetchState, 1500)
+    // Check authentication
+    fetch('/api/questions').then(res => {
+      if (res.status === 401) {
+        router.push('/admin')
+        return
+      }
+      Promise.all([fetchState(), fetchContestants()]).finally(() => setLoading(false))
+      pollRef.current = setInterval(fetchState, 1500)
+    }).catch(() => {
+      setLoading(false)
+    })
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [fetchState, fetchContestants])
+  }, [fetchState, fetchContestants, router])
 
   async function apiCall(url: string, body?: object) {
     setActionLoading(true)
