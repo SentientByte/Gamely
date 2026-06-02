@@ -1,0 +1,137 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 15, 10, 40;
+  --background-end-rgb: 30, 20, 70;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(var(--background-end-rgb))
+  )
+  rgb(var(--background-start-rgb));
+}
+
+.font-arabic {
+  font-family: 'Noto Sans Arabic', sans-serif;
+}
+
+[dir="rtl"] {
+  font-family: 'Noto Sans Arabic', sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Game show animations */
+@keyframes scoreUp {
+  0% { transform: scale(1); color: #22c55e; }
+  50% { transform: scale(1.5); color: #86efac; }
+  100% { transform: scale(1); color: #22c55e; }
+}
+
+@keyframes scoreDown {
+  0% { transform: scale(1); color: #ef4444; }
+  50% { transform: scale(1.5); color: #fca5a5; }
+  100% { transform: scale(1); color: #ef4444; }
+}
+
+@keyframes correctPulse {
+  0% { background-color: #16a34a; }
+  50% { background-color: #4ade80; }
+  100% { background-color: #16a34a; }
+}
+
+@keyframes wrongPulse {
+  0% { background-color: #dc2626; }
+  50% { background-color: #f87171; }
+  100% { background-color: #dc2626; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.score-up { animation: scoreUp 0.6s ease-in-out; }
+.score-down { animation: scoreDown 0.6s ease-in-out; }
+.correct-bg { animation: correctPulse 1s ease-in-out infinite; }
+.wrong-bg { animation: wrongPulse 1s ease-in-out infinite; }
+
+.shimmer-bg {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 215, 0, 0.1) 0%,
+    rgba(255, 215, 0, 0.3) 50%,
+    rgba(255, 215, 0, 0.1) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Option button hover effects */
+.option-btn {
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.option-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
+
+.option-btn.selected {
+  border-color: #fbbf24 !important;
+  background-color: rgba(251, 191, 36, 0.2) !important;
+}
+
+.option-btn.correct {
+  background-color: #16a34a !important;
+  border-color: #4ade80 !important;
+}
+
+.option-btn.wrong {
+  background-color: #dc2626 !important;
+  border-color: #f87171 !important;
+}
+
+/* Wager button */
+.wager-btn {
+  transition: all 0.2s ease;
+}
+
+.wager-btn:hover {
+  transform: scale(1.05);
+}
+
+.wager-btn.active {
+  background-color: #fbbf24;
+  color: #1a1a2e;
+  font-weight: 700;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255,215,0,0.4);
+  border-radius: 3px;
+}
