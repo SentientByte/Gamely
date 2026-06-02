@@ -2,6 +2,42 @@ import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { isValidAdminToken, ADMIN_COOKIE_NAME } from '@/lib/auth'
 
+const MONTH_NAMES_AR = {
+  '01': 'يناير',
+  '02': 'فبراير',
+  '03': 'مارس',
+  '04': 'أبريل',
+  '05': 'مايو',
+  '06': 'يونيو',
+  '07': 'يوليو',
+  '08': 'أغسطس',
+  '09': 'سبتمبر',
+  '10': 'أكتوبر',
+  '11': 'نوفمبر',
+  '12': 'ديسمبر',
+}
+
+function formatBirthdayWithMonthName(answer: string): string {
+  const parts = answer.split('/')
+  if (parts.length === 2) {
+    const monthNum = parts[0]
+    const day = parts[1]
+    const monthName = MONTH_NAMES_AR[monthNum as keyof typeof MONTH_NAMES_AR]
+    if (monthName) {
+      return `${monthName}/${day}`
+    }
+  }
+  return answer
+}
+
+function formatAnswerForDisplay(answer: string, questionId: number): string {
+  // For question 1 (birthday), format with month name
+  if (questionId === 1) {
+    return formatBirthdayWithMonthName(answer)
+  }
+  return answer
+}
+
 export async function POST(request: NextRequest) {
   const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value
   if (!isValidAdminToken(token)) {
@@ -33,6 +69,8 @@ export async function POST(request: NextRequest) {
     const options: Array<{ id: string; text: string; is_correct: boolean }> = currentState.options || []
     const wager: number = currentState.wager || 100
     const multiplier: number = currentState.reward_multiplier ?? 1.0
+    const questionId: number = currentState.question_id || 0
+    const isReverseQuestion: boolean = currentState.is_reverse_question || false
 
     const selectedOption = options.find(o => o.id === option_id)
     if (!selectedOption) {
@@ -57,11 +95,17 @@ export async function POST(request: NextRequest) {
       db.prepare('UPDATE game_sessions SET team_b_score = team_b_score + ? WHERE id = ?').run(scoreChange, session.id)
     }
 
+    // Format the correct answer for display (birthday with month names)
+    let displayAnswer = correctOption?.text || ''
+    if (!isReverseQuestion && questionId === 1) {
+      displayAnswer = formatAnswerForDisplay(displayAnswer, questionId)
+    }
+
     currentState.selected_option = option_id
     currentState.last_result = {
       correct: isCorrect,
       score_change: scoreChange,
-      correct_answer: correctOption?.text || '',
+      correct_answer: displayAnswer,
       correct_option_id: correctOption?.id || '',
     }
 
@@ -71,7 +115,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       correct: isCorrect,
-      correct_answer: correctOption?.text || '',
+      correct_answer: displayAnswer,
       correct_option_id: correctOption?.id || '',
       score_change: scoreChange,
       wager,

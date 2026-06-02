@@ -14,8 +14,36 @@ function shuffle<T>(arr: T[]): T[] {
 const OPTION_LABELS = ['أ', 'ب', 'ج', 'د', 'هـ']
 const FALLBACK_WRONG = ['لا أعرف', 'ربما', 'لم أقرر بعد', 'سؤال صعب', 'لا شيء من هذا']
 
+const MONTH_NAMES_AR = {
+  '01': 'يناير',
+  '02': 'فبراير',
+  '03': 'مارس',
+  '04': 'أبريل',
+  '05': 'مايو',
+  '06': 'يونيو',
+  '07': 'يوليو',
+  '08': 'أغسطس',
+  '09': 'سبتمبر',
+  '10': 'أكتوبر',
+  '11': 'نوفمبر',
+  '12': 'ديسمبر',
+}
+
+function formatBirthdayWithMonthName(answer: string): string {
+  const parts = answer.split('/')
+  if (parts.length === 2) {
+    const monthNum = parts[0]
+    const day = parts[1]
+    const monthName = MONTH_NAMES_AR[monthNum as keyof typeof MONTH_NAMES_AR]
+    if (monthName) {
+      return `${monthName}/${day}`
+    }
+  }
+  return answer
+}
+
 const QUESTION_TEMPLATES = {
-  1: (answer: string) => `من وُلد في ${answer}؟`,
+  1: (answer: string) => `من وُلد في ${formatBirthdayWithMonthName(answer)}؟`,
   2: (answer: string) => `من لونه المفضل هو ${answer}؟`,
   3: (answer: string) => `من معدله في الثانوية العامة ${answer}؟`,
   4: (answer: string) => `من أفضل أصدقاؤه ${answer}؟`,
