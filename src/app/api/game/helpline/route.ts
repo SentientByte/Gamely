@@ -113,9 +113,25 @@ export async function POST(request: NextRequest) {
     let multiplierReduction = 0
     let newState = { ...currentState }
 
+    // Determine cost based on helpline type
+    if (type === 'remove_two') {
+      costPoints = 50
+    } else if (type === 'same_person') {
+      costPoints = 100
+    } else if (type === 'opposing_team') {
+      costPoints = 75
+    } else if (type === 'wild') {
+      costPoints = 200
+    }
+
+    // Check if team has enough balance
+    const teamBalance = isTeamA ? session.team_a_score : session.team_b_score
+    if (teamBalance < costPoints) {
+      return NextResponse.json({ error: `Insufficient balance. Cost: ${costPoints}, Balance: ${teamBalance}` }, { status: 400 })
+    }
+
     if (type === 'remove_two') {
       // Remove 2 wrong options
-      costPoints = 50
       multiplierReduction = 0.25
 
       const eliminated: string[] = currentState.eliminated_options || []
@@ -163,7 +179,6 @@ export async function POST(request: NextRequest) {
     let newQuestionId: number | null = null
 
     if (type === 'same_person') {
-      costPoints = 100
       multiplierReduction = 0.5
       targetContestantId = currentState.contestant_id
 
@@ -187,7 +202,6 @@ export async function POST(request: NextRequest) {
       newQuestionId = available[Math.floor(Math.random() * available.length)].id
 
     } else if (type === 'opposing_team') {
-      costPoints = 75
       multiplierReduction = 0.5
       const opposingTeam = session.current_team === 'A' ? 'B' : 'A'
 
@@ -224,7 +238,6 @@ export async function POST(request: NextRequest) {
       }
 
     } else if (type === 'wild') {
-      costPoints = 200
       multiplierReduction = 0.5
 
       const wildContestants = db.prepare(
