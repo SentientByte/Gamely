@@ -66,7 +66,7 @@ export default function GamePage() {
 
   const fetchState = useCallback(async () => {
     try {
-      const res = await fetch('/api/game/state')
+      const res = await fetch('/api/game/state', { credentials: 'include' })
       const data = await res.json()
       setSession(data.session)
     } catch { /* ignore */ }
@@ -74,7 +74,7 @@ export default function GamePage() {
 
   const fetchContestants = useCallback(async () => {
     try {
-      const res = await fetch('/api/contestants')
+      const res = await fetch('/api/contestants', { credentials: 'include' })
       if (res.ok) {
         const data = await res.json()
         setContestants(data)
@@ -94,6 +94,7 @@ export default function GamePage() {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: body ? JSON.stringify(body) : undefined,
       })
       const data = await res.json()

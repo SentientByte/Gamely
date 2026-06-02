@@ -26,9 +26,9 @@ export default function AnswersPage() {
   async function fetchData() {
     try {
       const [qRes, cRes, aRes] = await Promise.all([
-        fetch('/api/questions'),
-        fetch('/api/contestants'),
-        fetch('/api/answers'),
+        fetch('/api/questions', { credentials: 'include' }),
+        fetch('/api/contestants', { credentials: 'include' }),
+        fetch('/api/answers', { credentials: 'include' }),
       ])
       if (qRes.status === 401) { router.push('/admin'); return }
 
@@ -51,7 +51,7 @@ export default function AnswersPage() {
       // Delete
       const ans = getAnswer(contestant_id, question_id)
       if (ans) {
-        await fetch(`/api/answers/${ans.id}`, { method: 'DELETE' })
+        await fetch(`/api/answers/${ans.id}`, { method: 'DELETE', credentials: 'include' })
       }
     } else {
       const ans = getAnswer(contestant_id, question_id)
@@ -59,12 +59,14 @@ export default function AnswersPage() {
         await fetch(`/api/answers/${ans.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ answer: editValue }),
         })
       } else {
         await fetch('/api/answers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ contestant_id, question_id, answer: editValue }),
         })
       }
