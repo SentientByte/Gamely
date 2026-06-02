@@ -14,12 +14,37 @@ function shuffle<T>(arr: T[]): T[] {
 const OPTION_LABELS = ['أ', 'ب', 'ج', 'د', 'هـ']
 const FALLBACK_WRONG = ['لا أعرف', 'ربما', 'لم أقرر بعد', 'سؤال صعب', 'لا شيء من هذا']
 
+const QUESTION_TEMPLATES = {
+  1: (answer: string) => `من وُلد في ${answer}؟`,
+  2: (answer: string) => `من لونه المفضل هو ${answer}؟`,
+  3: (answer: string) => `من معدله في الثانوية العامة ${answer}؟`,
+  4: (answer: string) => `من أفضل أصدقاؤه ${answer}؟`,
+  5: (answer: string) => `من وجبته المفضلة هي ${answer}؟`,
+  6: (answer: string) => `من يتمنى زيارة ${answer}؟`,
+  7: (answer: string) => `من آيته المفضلة هي ${answer}؟`,
+  8: (answer: string) => `من سورته المفضلة هي ${answer}؟`,
+  9: (answer: string) => `من مقاس حذائه ${answer}؟`,
+  10: (answer: string) => `من يريد أن يفعل أولاً: ${answer}؟`,
+}
+
+function buildReverseQuestion(
+  questionId: number,
+  correctAnswer: string
+): string {
+  const template = QUESTION_TEMPLATES[questionId as keyof typeof QUESTION_TEMPLATES]
+  if (!template) {
+    return `من الإجابة الصحيحة هي ${correctAnswer}؟`
+  }
+  return template(correctAnswer)
+}
+
 async function buildQuestion(
   session: { id: number; current_team: string },
   contestantId: number,
   questionId: number,
   multiplier: number,
-  helplines_used: string[]
+  helplines_used: string[],
+  wager: number = 100
 ) {
   const contestant = db.prepare('SELECT id, name, team FROM contestants WHERE id = ?').get(contestantId) as {
     id: number; name: string; team: string
@@ -34,36 +59,71 @@ async function buildQuestion(
   if (!correctRow) return null
 
   const correctAnswer = correctRow.answer
+  let questionText = question.text
+  let options
 
-  const otherAnswers = db.prepare(`
-    SELECT DISTINCT answer FROM answers
-    WHERE question_id = ? AND contestant_id != ? AND answer != ?
-    LIMIT 8
-  `).all(questionId, contestantId, correctAnswer) as Array<{ answer: string }>
+  // For high wagers (>499), use reverse question format
+  if (wager > 499) {
+    questionText = buildReverseQuestion(questionId, correctAnswer)
 
-  const wrongAnswerTexts = otherAnswers.map(r => r.answer)
-  let padIndex = 0
-  while (wrongAnswerTexts.length < 4) {
-    const fallback = FALLBACK_WRONG[padIndex % FALLBACK_WRONG.length]
-    if (!wrongAnswerTexts.includes(fallback) && fallback !== correctAnswer) {
-      wrongAnswerTexts.push(fallback)
+    // Get all contestants with their names
+    const allContestants = db.prepare('SELECT id, name FROM contestants ORDER BY id ASC').all() as Array<{ id: number; name: string }>
+
+    if (allContestants.length < 2) {
+      return null
     }
-    padIndex++
-    if (padIndex > 20) break
+
+    // The correct answer is the name of the contestant we're asking about
+    const correctContestantName = contestant.name
+
+    // Get other contestant names (wrong answers)
+    const wrongNames = allContestants
+      .filter(c => c.id !== contestantId)
+      .map(c => c.name)
+      .slice(0, 4)
+
+    // Build options array with contestant names and shuffle
+    const allOptions = shuffle([
+      { text: correctContestantName, is_correct: true },
+      ...wrongNames.map(t => ({ text: t, is_correct: false })),
+    ])
+
+    options = allOptions.map((opt, i) => ({
+      id: OPTION_LABELS[i],
+      text: opt.text,
+      is_correct: opt.is_correct,
+    }))
+  } else {
+    const otherAnswers = db.prepare(`
+      SELECT DISTINCT answer FROM answers
+      WHERE question_id = ? AND contestant_id != ? AND answer != ?
+      LIMIT 8
+    `).all(questionId, contestantId, correctAnswer) as Array<{ answer: string }>
+
+    const wrongAnswerTexts = otherAnswers.map(r => r.answer)
+    let padIndex = 0
+    while (wrongAnswerTexts.length < 4) {
+      const fallback = FALLBACK_WRONG[padIndex % FALLBACK_WRONG.length]
+      if (!wrongAnswerTexts.includes(fallback) && fallback !== correctAnswer) {
+        wrongAnswerTexts.push(fallback)
+      }
+      padIndex++
+      if (padIndex > 20) break
+    }
+
+    const finalWrong = wrongAnswerTexts.slice(0, 4)
+    const allOptions = shuffle([
+      { text: correctAnswer, is_correct: true },
+      ...finalWrong.map(t => ({ text: t, is_correct: false })),
+    ])
+    options = allOptions.map((opt, i) => ({
+      id: OPTION_LABELS[i],
+      text: opt.text,
+      is_correct: opt.is_correct,
+    }))
   }
 
-  const finalWrong = wrongAnswerTexts.slice(0, 4)
-  const allOptions = shuffle([
-    { text: correctAnswer, is_correct: true },
-    ...finalWrong.map(t => ({ text: t, is_correct: false })),
-  ])
-  const options = allOptions.map((opt, i) => ({
-    id: OPTION_LABELS[i],
-    text: opt.text,
-    is_correct: opt.is_correct,
-  }))
-
-  return { contestant, question, options, multiplier, helplines_used }
+  return { contestant, question: { ...question, text: questionText }, options, multiplier, helplines_used }
 }
 
 export async function POST(request: NextRequest) {
@@ -283,6 +343,7 @@ export async function POST(request: NextRequest) {
 
     const newMultiplier = Math.max(0.25, (currentState.reward_multiplier ?? 1.0) - multiplierReduction)
     const newHelplines = [...helplines_used, type]
+    const wager = currentState.wager || 100
 
     // Build new question
     const result = await buildQuestion(
@@ -290,7 +351,8 @@ export async function POST(request: NextRequest) {
       targetContestantId!,
       newQuestionId!,
       newMultiplier,
-      newHelplines
+      newHelplines,
+      wager
     )
 
     if (!result) {

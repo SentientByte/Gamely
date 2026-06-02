@@ -14,6 +14,30 @@ function shuffle<T>(arr: T[]): T[] {
 const OPTION_LABELS = ['أ', 'ب', 'ج', 'د', 'هـ']
 const FALLBACK_WRONG = ['لا أعرف', 'ربما', 'لم أقرر بعد', 'سؤال صعب', 'لا شيء من هذا']
 
+const QUESTION_TEMPLATES = {
+  1: (answer: string) => `من وُلد في ${answer}؟`, // Who was born on DD/MM?
+  2: (answer: string) => `من لونه المفضل هو ${answer}؟`, // Whose favorite color is X?
+  3: (answer: string) => `من معدله في الثانوية العامة ${answer}؟`, // Whose GPA is X?
+  4: (answer: string) => `من أفضل أصدقاؤه ${answer}؟`, // Whose best friend is X?
+  5: (answer: string) => `من وجبته المفضلة هي ${answer}؟`, // Whose favorite food is X?
+  6: (answer: string) => `من يتمنى زيارة ${answer}؟`, // Who wants to visit X?
+  7: (answer: string) => `من آيته المفضلة هي ${answer}؟`, // Whose favorite verse is X?
+  8: (answer: string) => `من سورته المفضلة هي ${answer}؟`, // Whose favorite surah is X?
+  9: (answer: string) => `من مقاس حذائه ${answer}؟`, // Whose shoe size is X?
+  10: (answer: string) => `من يريد أن يفعل أولاً: ${answer}؟`, // Who would do first: X?
+}
+
+function buildReverseQuestion(
+  questionId: number,
+  correctAnswer: string
+): string {
+  const template = QUESTION_TEMPLATES[questionId as keyof typeof QUESTION_TEMPLATES]
+  if (!template) {
+    return `من الإجابة الصحيحة هي ${correctAnswer}؟`
+  }
+  return template(correctAnswer)
+}
+
 export async function POST(request: NextRequest) {
   const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value
   if (!isValidAdminToken(token)) {
@@ -92,46 +116,84 @@ export async function POST(request: NextRequest) {
 
     const correctAnswer = correctAnswerRow.answer
 
-    // Get wrong answers from other contestants for the same question
-    const otherAnswers = db.prepare(`
-      SELECT DISTINCT answer FROM answers
-      WHERE question_id = ? AND contestant_id != ? AND answer != ?
-      LIMIT 8
-    `).all(selectedQuestion.id, contestant_id, correctAnswer) as Array<{ answer: string }>
-
-    const wrongAnswerTexts = otherAnswers.map(r => r.answer)
-
-    // Pad with fallbacks if needed
-    let padIndex = 0
-    while (wrongAnswerTexts.length < 4) {
-      const fallback = FALLBACK_WRONG[padIndex % FALLBACK_WRONG.length]
-      if (!wrongAnswerTexts.includes(fallback) && fallback !== correctAnswer) {
-        wrongAnswerTexts.push(fallback)
-      }
-      padIndex++
-      if (padIndex > 20) break
-    }
-
-    // Take exactly 4 wrong answers
-    const finalWrong = wrongAnswerTexts.slice(0, 4)
-
-    // Build options array and shuffle
-    const allOptions = shuffle([
-      { text: correctAnswer, is_correct: true },
-      ...finalWrong.map(t => ({ text: t, is_correct: false })),
-    ])
-
-    const options = allOptions.map((opt, i) => ({
-      id: OPTION_LABELS[i],
-      text: opt.text,
-      is_correct: opt.is_correct,
-    }))
-
     // Get current state for wager/multiplier
     const currentState = JSON.parse(session.current_state || '{}')
     const wager = currentState.wager || 100
     const rewardMultiplier = currentState.reward_multiplier ?? 1.0
     const helplines_used = currentState.helplines_used || []
+
+    let questionText = selectedQuestion.text
+    let options: Array<{ id: string; text: string; is_correct: boolean }>
+    let isReverseQuestion = false
+
+    // For high wagers (>499), use reverse question format
+    if (wager > 499) {
+      isReverseQuestion = true
+      questionText = buildReverseQuestion(selectedQuestion.id, correctAnswer)
+
+      // Get all contestants with their names
+      const allContestants = db.prepare('SELECT id, name FROM contestants ORDER BY id ASC').all() as Array<{ id: number; name: string }>
+
+      if (allContestants.length < 2) {
+        return NextResponse.json({ error: 'Not enough contestants for reverse question' }, { status: 400 })
+      }
+
+      // The correct answer is the name of the contestant we're asking about
+      const correctContestantName = contestant.name
+
+      // Get other contestant names (wrong answers)
+      const wrongNames = allContestants
+        .filter(c => c.id !== contestant_id)
+        .map(c => c.name)
+        .slice(0, 4)
+
+      // Build options array with contestant names and shuffle
+      const allOptions = shuffle([
+        { text: correctContestantName, is_correct: true },
+        ...wrongNames.map(t => ({ text: t, is_correct: false })),
+      ])
+
+      options = allOptions.map((opt, i) => ({
+        id: OPTION_LABELS[i],
+        text: opt.text,
+        is_correct: opt.is_correct,
+      }))
+    } else {
+      // Normal question format: get wrong answers from other contestants
+      const otherAnswers = db.prepare(`
+        SELECT DISTINCT answer FROM answers
+        WHERE question_id = ? AND contestant_id != ? AND answer != ?
+        LIMIT 8
+      `).all(selectedQuestion.id, contestant_id, correctAnswer) as Array<{ answer: string }>
+
+      const wrongAnswerTexts = otherAnswers.map(r => r.answer)
+
+      // Pad with fallbacks if needed
+      let padIndex = 0
+      while (wrongAnswerTexts.length < 4) {
+        const fallback = FALLBACK_WRONG[padIndex % FALLBACK_WRONG.length]
+        if (!wrongAnswerTexts.includes(fallback) && fallback !== correctAnswer) {
+          wrongAnswerTexts.push(fallback)
+        }
+        padIndex++
+        if (padIndex > 20) break
+      }
+
+      // Take exactly 4 wrong answers
+      const finalWrong = wrongAnswerTexts.slice(0, 4)
+
+      // Build options array and shuffle
+      const allOptions = shuffle([
+        { text: correctAnswer, is_correct: true },
+        ...finalWrong.map(t => ({ text: t, is_correct: false })),
+      ])
+
+      options = allOptions.map((opt, i) => ({
+        id: OPTION_LABELS[i],
+        text: opt.text,
+        is_correct: opt.is_correct,
+      }))
+    }
 
     // Mark question as used
     try {
@@ -148,7 +210,7 @@ export async function POST(request: NextRequest) {
       contestant_id,
       contestant_name: contestant.name,
       question_id: selectedQuestion.id,
-      question_text: selectedQuestion.text,
+      question_text: questionText,
       wager,
       reward_multiplier: rewardMultiplier,
       options,
@@ -156,6 +218,8 @@ export async function POST(request: NextRequest) {
       helplines_used,
       selected_option: null,
       last_result: null,
+      is_reverse_question: isReverseQuestion,
+      original_answer: isReverseQuestion ? correctAnswer : undefined,
     }
 
     db.prepare(`
@@ -165,7 +229,7 @@ export async function POST(request: NextRequest) {
     `).run(JSON.stringify(newState), selectedQuestion.id, session.id)
 
     return NextResponse.json({
-      question_text: selectedQuestion.text,
+      question_text: questionText,
       options,
       contestant_name: contestant.name,
       contestant_id: contestant.id,
