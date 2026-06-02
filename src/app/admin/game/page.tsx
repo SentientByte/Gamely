@@ -58,6 +58,7 @@ export default function GamePage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [startScoreA, setStartScoreA] = useState(0)
   const [startScoreB, setStartScoreB] = useState(0)
+  const [toggleTeams, setToggleTeams] = useState<'A' | 'B'>('A')
   const [currentQuestion, setCurrentQuestion] = useState<string>('')
   const [currentContestantName, setCurrentContestantName] = useState<string>('')
   const [scoreAnimation, setScoreAnimation] = useState<'up' | 'down' | null>(null)
@@ -104,7 +105,11 @@ export default function GamePage() {
   }
 
   async function handleStart() {
-    await apiCall('/api/game/start', { team_a_score: startScoreA, team_b_score: startScoreB })
+    await apiCall('/api/game/start', {
+      team_a_score: startScoreA,
+      team_b_score: startScoreB,
+      starting_team: toggleTeams
+    })
     setSelectedOption(null)
     setSelectedWager(100)
   }
@@ -255,28 +260,55 @@ export default function GamePage() {
               <p className="text-slate-400 text-xl">مسابقة الفريقين</p>
             </div>
 
-            <div className="flex gap-6">
-              <div className="text-center">
-                <label className="text-green-300 text-sm mb-1 block">نقاط الفريق الأول</label>
-                <input
-                  type="number"
-                  value={startScoreA}
-                  onChange={e => setStartScoreA(Number(e.target.value))}
-                  className="bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-2 w-28 text-center focus:outline-none focus:ring-2 focus:ring-green-500"
-                  min={0}
-                  step={100}
-                />
+            <div className="flex flex-col gap-6">
+              <div className="flex gap-6">
+                <div className="text-center">
+                  <label className="text-green-300 text-sm mb-1 block">نقاط الفريق الأول</label>
+                  <input
+                    type="number"
+                    value={startScoreA}
+                    onChange={e => setStartScoreA(Number(e.target.value))}
+                    className="bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-2 w-28 text-center focus:outline-none focus:ring-2 focus:ring-green-500"
+                    min={0}
+                    step={100}
+                  />
+                </div>
+                <div className="text-center">
+                  <label className="text-blue-300 text-sm mb-1 block">نقاط الفريق الثاني</label>
+                  <input
+                    type="number"
+                    value={startScoreB}
+                    onChange={e => setStartScoreB(Number(e.target.value))}
+                    className="bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-2 w-28 text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    min={0}
+                    step={100}
+                  />
+                </div>
               </div>
               <div className="text-center">
-                <label className="text-blue-300 text-sm mb-1 block">نقاط الفريق الثاني</label>
-                <input
-                  type="number"
-                  value={startScoreB}
-                  onChange={e => setStartScoreB(Number(e.target.value))}
-                  className="bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-2 w-28 text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  min={0}
-                  step={100}
-                />
+                <label className="text-yellow-300 text-sm mb-2 block">أختر الفريق الذي سيبدأ أولاً</label>
+                <div className="flex gap-3 justify-center">
+                  <button
+                    onClick={() => setToggleTeams('A')}
+                    className={`px-6 py-2 rounded-lg font-bold transition-all ${
+                      toggleTeams === 'A'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    الفريق الأول 🟢
+                  </button>
+                  <button
+                    onClick={() => setToggleTeams('B')}
+                    className={`px-6 py-2 rounded-lg font-bold transition-all ${
+                      toggleTeams === 'B'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    الفريق الثاني 🔵
+                  </button>
+                </div>
               </div>
             </div>
 
