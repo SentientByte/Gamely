@@ -12,7 +12,7 @@ export default function AdminLoginPage() {
 
   useEffect(() => {
     // Check if already logged in
-    fetch('/api/questions').then(res => {
+    fetch('/api/questions', { credentials: 'include' }).then(res => {
       if (res.status !== 401) {
         router.push('/admin/dashboard')
       }
@@ -28,6 +28,7 @@ export default function AdminLoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ username, password }),
       })
 

@@ -24,9 +24,9 @@ export default function DashboardPage() {
   async function fetchStats() {
     try {
       const [qRes, cRes, aRes] = await Promise.all([
-        fetch('/api/questions'),
-        fetch('/api/contestants'),
-        fetch('/api/answers'),
+        fetch('/api/questions', { credentials: 'include' }),
+        fetch('/api/contestants', { credentials: 'include' }),
+        fetch('/api/answers', { credentials: 'include' }),
       ])
 
       if (qRes.status === 401) {
@@ -53,7 +53,7 @@ export default function DashboardPage() {
   }
 
   async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
     router.push('/admin')
   }
 

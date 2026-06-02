@@ -33,7 +33,7 @@ export default function ContestantsPage() {
 
   async function fetchContestants() {
     try {
-      const res = await fetch('/api/contestants')
+      const res = await fetch('/api/contestants', { credentials: 'include' })
       if (res.status === 401) { router.push('/admin'); return }
       const data = await res.json()
       setContestants(data)
@@ -52,6 +52,7 @@ export default function ContestantsPage() {
       const res = await fetch('/api/contestants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ name: newName.trim(), team: newTeam }),
       })
       if (res.ok) {
@@ -65,7 +66,7 @@ export default function ContestantsPage() {
 
   async function handleDelete(id: number, name: string) {
     if (!confirm(`Delete ${name}? This will also delete all their answers.`)) return
-    await fetch(`/api/contestants/${id}`, { method: 'DELETE' })
+    await fetch(`/api/contestants/${id}`, { method: 'DELETE', credentials: 'include' })
     fetchContestants()
   }
 

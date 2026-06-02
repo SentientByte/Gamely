@@ -32,8 +32,8 @@ export default function QuestionsPage() {
   async function fetchData() {
     try {
       const [qRes, aRes] = await Promise.all([
-        fetch('/api/questions'),
-        fetch('/api/answers'),
+        fetch('/api/questions', { credentials: 'include' }),
+        fetch('/api/answers', { credentials: 'include' }),
       ])
 
       if (qRes.status === 401) { router.push('/admin'); return }
@@ -63,6 +63,7 @@ export default function QuestionsPage() {
       const res = await fetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ text: newText.trim() }),
       })
       if (res.ok) {
@@ -81,6 +82,7 @@ export default function QuestionsPage() {
       const res = await fetch(`/api/questions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ text: editText.trim() }),
       })
       if (res.ok) {
@@ -94,7 +96,7 @@ export default function QuestionsPage() {
 
   async function handleDelete(id: number) {
     if (!confirm('Delete this question? This will also delete all related answers.')) return
-    await fetch(`/api/questions/${id}`, { method: 'DELETE' })
+    await fetch(`/api/questions/${id}`, { method: 'DELETE', credentials: 'include' })
     fetchData()
   }
 

@@ -1,7 +1,13 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
+import { isValidAdminToken, ADMIN_COOKIE_NAME } from '@/lib/auth'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value
+  if (!isValidAdminToken(token)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const session = db.prepare(`
       SELECT * FROM game_sessions ORDER BY id DESC LIMIT 1
