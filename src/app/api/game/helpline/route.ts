@@ -15,143 +15,107 @@ const OPTION_LABELS = ['أ', 'ب', 'ج', 'د', 'هـ']
 const FALLBACK_WRONG = ['لا أعرف', 'ربما', 'لم أقرر بعد', 'سؤال صعب', 'لا شيء من هذا']
 
 const MONTH_NAMES_AR = {
-  '01': 'يناير',
-  '02': 'فبراير',
-  '03': 'مارس',
-  '04': 'أبريل',
-  '05': 'مايو',
-  '06': 'يونيو',
-  '07': 'يوليو',
-  '08': 'أغسطس',
-  '09': 'سبتمبر',
-  '10': 'أكتوبر',
-  '11': 'نوفمبر',
-  '12': 'ديسمبر',
+  '01': 'يناير', '02': 'فبراير', '03': 'مارس', '04': 'أبريل',
+  '05': 'مايو', '06': 'يونيو', '07': 'يوليو', '08': 'أغسطس',
+  '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر',
 }
 
 function formatBirthdayWithMonthName(answer: string): string {
   const parts = answer.split('/')
   if (parts.length === 2) {
-    const monthNum = parts[0]
-    const day = parts[1]
-    const monthName = MONTH_NAMES_AR[monthNum as keyof typeof MONTH_NAMES_AR]
-    if (monthName) {
-      return `${monthName}/${day}`
-    }
+    const monthName = MONTH_NAMES_AR[parts[0] as keyof typeof MONTH_NAMES_AR]
+    if (monthName) return `${monthName}/${parts[1]}`
   }
   return answer
 }
 
-const QUESTION_TEMPLATES = {
-  1: (answer: string) => `من وُلد في ${formatBirthdayWithMonthName(answer)}؟`,
-  2: (answer: string) => `من لونه المفضل هو ${answer}؟`,
-  3: (answer: string) => `من معدله في الثانوية العامة ${answer}؟`,
-  4: (answer: string) => `من أفضل أصدقاؤه ${answer}؟`,
-  5: (answer: string) => `من وجبته المفضلة هي ${answer}؟`,
-  6: (answer: string) => `من يتمنى زيارة ${answer}؟`,
-  7: (answer: string) => `من آيته المفضلة هي ${answer}؟`,
-  8: (answer: string) => `من سورته المفضلة هي ${answer}؟`,
-  9: (answer: string) => `من مقاس حذائه ${answer}؟`,
-  10: (answer: string) => `من يريد أن يفعل أولاً: ${answer}؟`,
+const REVERSE_TEMPLATES: Record<number, (a: string) => string> = {
+  1: (a) => `من وُلد في ${formatBirthdayWithMonthName(a)}؟`,
+  2: (a) => `من لونه المفضل هو ${a}؟`,
+  3: (a) => `من معدله في الثانوية العامة ${a}؟`,
+  4: (a) => `من أفضل أصدقاؤه ${a}؟`,
+  5: (a) => `من وجبته المفضلة هي ${a}؟`,
+  6: (a) => `من يتمنى زيارة ${a}؟`,
+  7: (a) => `من آيته المفضلة هي ${a}؟`,
+  8: (a) => `من سورته المفضلة هي ${a}؟`,
+  9: (a) => `من مقاس حذائه ${a}؟`,
+  10: (a) => `من يريد أن يفعل أولاً: ${a}؟`,
 }
 
-function buildReverseQuestion(
-  questionId: number,
-  correctAnswer: string
-): string {
-  const template = QUESTION_TEMPLATES[questionId as keyof typeof QUESTION_TEMPLATES]
-  if (!template) {
-    return `من الإجابة الصحيحة هي ${correctAnswer}؟`
+function personalizeQuestion(template: string | null | undefined, questionText: string, contestantName: string): string {
+  if (template) return template.replace('{name}', contestantName)
+  return `سؤال عن ${contestantName}: ${questionText}`
+}
+
+function buildReverseQuestion(questionId: number, correctAnswer: string): string {
+  const template = REVERSE_TEMPLATES[questionId]
+  return template ? template(correctAnswer) : `من الإجابة الصحيحة هي ${correctAnswer}؟`
+}
+
+function getHelplineSetting(key: string): { cost: number; multiplier_reduction: number } {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+  if (row) return JSON.parse(row.value)
+  const defaults: Record<string, { cost: number; multiplier_reduction: number }> = {
+    helpline_remove_two: { cost: 50, multiplier_reduction: 0.25 },
+    helpline_same_person: { cost: 100, multiplier_reduction: 0.5 },
+    helpline_opposing_team: { cost: 75, multiplier_reduction: 0.5 },
+    helpline_wild: { cost: 200, multiplier_reduction: 0.5 },
   }
-  return template(correctAnswer)
+  return defaults[key] || { cost: 0, multiplier_reduction: 0 }
 }
 
-async function buildQuestion(
-  session: { id: number; current_team: string },
+async function buildNormalQuestion(
   contestantId: number,
   questionId: number,
-  multiplier: number,
-  helplines_used: string[],
-  wager: number = 100
+  wager: number,
+  contestantName: string
 ) {
-  const contestant = db.prepare('SELECT id, name, team FROM contestants WHERE id = ?').get(contestantId) as {
-    id: number; name: string; team: string
-  }
-  const question = db.prepare('SELECT id, text FROM questions WHERE id = ?').get(questionId) as {
-    id: number; text: string
-  }
-  const correctRow = db.prepare(
-    'SELECT answer FROM answers WHERE contestant_id = ? AND question_id = ?'
-  ).get(contestantId, questionId) as { answer: string } | undefined
+  const question = db.prepare('SELECT id, text, personalized_template FROM questions WHERE id = ?').get(questionId) as {
+    id: number; text: string; personalized_template: string | null
+  } | undefined
+  if (!question) return null
 
+  const correctRow = db.prepare('SELECT answer FROM answers WHERE contestant_id = ? AND question_id = ?')
+    .get(contestantId, questionId) as { answer: string } | undefined
   if (!correctRow) return null
 
   const correctAnswer = correctRow.answer
-  let questionText = question.text
-  let options
+  let questionText: string
+  let options: Array<{ id: string; text: string; is_correct: boolean }>
 
-  // For high wagers (>499), use reverse question format
   if (wager > 499) {
     questionText = buildReverseQuestion(questionId, correctAnswer)
-
-    // Get all contestants with their names
     const allContestants = db.prepare('SELECT id, name FROM contestants ORDER BY id ASC').all() as Array<{ id: number; name: string }>
-
-    if (allContestants.length < 2) {
-      return null
-    }
-
-    // The correct answer is the name of the contestant we're asking about
-    const correctContestantName = contestant.name
-
-    // Get other contestant names (wrong answers)
-    const wrongNames = allContestants
-      .filter(c => c.id !== contestantId)
-      .map(c => c.name)
-      .slice(0, 4)
-
-    // Build options array with contestant names and shuffle
+    if (allContestants.length < 2) return null
+    const wrongNames = allContestants.filter(c => c.id !== contestantId).map(c => c.name).slice(0, 4)
     const allOptions = shuffle([
-      { text: correctContestantName, is_correct: true },
+      { text: contestantName, is_correct: true },
       ...wrongNames.map(t => ({ text: t, is_correct: false })),
     ])
-
-    options = allOptions.map((opt, i) => ({
-      id: OPTION_LABELS[i],
-      text: opt.text,
-      is_correct: opt.is_correct,
-    }))
+    options = allOptions.map((opt, i) => ({ id: OPTION_LABELS[i], text: opt.text, is_correct: opt.is_correct }))
   } else {
+    questionText = personalizeQuestion(question.personalized_template, question.text, contestantName)
     const otherAnswers = db.prepare(`
-      SELECT DISTINCT answer FROM answers
-      WHERE question_id = ? AND contestant_id != ? AND answer != ?
-      LIMIT 8
+      SELECT DISTINCT answer FROM answers WHERE question_id = ? AND contestant_id != ? AND answer != ? LIMIT 8
     `).all(questionId, contestantId, correctAnswer) as Array<{ answer: string }>
 
     const wrongAnswerTexts = otherAnswers.map(r => r.answer)
     let padIndex = 0
     while (wrongAnswerTexts.length < 4) {
       const fallback = FALLBACK_WRONG[padIndex % FALLBACK_WRONG.length]
-      if (!wrongAnswerTexts.includes(fallback) && fallback !== correctAnswer) {
-        wrongAnswerTexts.push(fallback)
-      }
+      if (!wrongAnswerTexts.includes(fallback) && fallback !== correctAnswer) wrongAnswerTexts.push(fallback)
       padIndex++
       if (padIndex > 20) break
     }
-
     const finalWrong = wrongAnswerTexts.slice(0, 4)
     const allOptions = shuffle([
       { text: correctAnswer, is_correct: true },
       ...finalWrong.map(t => ({ text: t, is_correct: false })),
     ])
-    options = allOptions.map((opt, i) => ({
-      id: OPTION_LABELS[i],
-      text: opt.text,
-      is_correct: opt.is_correct,
-    }))
+    options = allOptions.map((opt, i) => ({ id: OPTION_LABELS[i], text: opt.text, is_correct: opt.is_correct }))
   }
 
-  return { contestant, question: { ...question, text: questionText }, options, multiplier, helplines_used }
+  return { questionText, options, correctAnswer }
 }
 
 export async function POST(request: NextRequest) {
@@ -169,13 +133,9 @@ export async function POST(request: NextRequest) {
     }
 
     const session = db.prepare('SELECT * FROM game_sessions ORDER BY id DESC LIMIT 1').get() as {
-      id: number
-      status: string
-      current_team: string
-      team_a_score: number
-      team_b_score: number
-      team_a_removes_used: number
-      team_b_removes_used: number
+      id: number; status: string; current_team: string;
+      team_a_score: number; team_b_score: number;
+      team_a_removes_used: number; team_b_removes_used: number;
       current_state: string
     } | undefined
 
@@ -186,64 +146,42 @@ export async function POST(request: NextRequest) {
     const currentState = JSON.parse(session.current_state || '{}')
     const helplines_used: string[] = currentState.helplines_used || []
 
-    if (helplines_used.includes(type) && type !== 'remove_two') {
-      return NextResponse.json({ error: 'Helpline already used' }, { status: 400 })
+    // Enforce one helpline per question
+    if (helplines_used.length > 0) {
+      return NextResponse.json({ error: 'يمكن استخدام مساعدة واحدة فقط في كل سؤال' }, { status: 400 })
     }
+
+    const settingKey = `helpline_${type === 'remove_two' ? 'remove_two' : type === 'same_person' ? 'same_person' : type === 'opposing_team' ? 'opposing_team' : 'wild'}`
+    const setting = getHelplineSetting(settingKey)
+    const costPoints = setting.cost
+    const multiplierReduction = setting.multiplier_reduction
 
     const isTeamA = session.current_team === 'A'
-    const removesUsed = isTeamA ? session.team_a_removes_used : session.team_b_removes_used
+    const teamBalance = isTeamA ? session.team_a_score : session.team_b_score
 
-    if (type === 'remove_two' && removesUsed >= 2) {
-      return NextResponse.json({ error: 'Remove two helpline used maximum times' }, { status: 400 })
+    if (teamBalance < costPoints) {
+      return NextResponse.json({ error: `رصيد غير كافٍ. التكلفة: ${costPoints}, الرصيد: ${teamBalance}` }, { status: 400 })
     }
 
-    let costPoints = 0
-    let multiplierReduction = 0
+    const wager = currentState.wager || 100
+    const currentMultiplier = currentState.reward_multiplier ?? 1.0
+    const newMultiplier = Math.max(0.25, currentMultiplier - multiplierReduction)
     let newState = { ...currentState }
 
-    // Determine cost based on helpline type
     if (type === 'remove_two') {
-      costPoints = 50
-    } else if (type === 'same_person') {
-      costPoints = 100
-    } else if (type === 'opposing_team') {
-      costPoints = 75
-    } else if (type === 'wild') {
-      costPoints = 200
-    }
-
-    // Check if team has enough balance
-    const teamBalance = isTeamA ? session.team_a_score : session.team_b_score
-    if (teamBalance < costPoints) {
-      return NextResponse.json({ error: `Insufficient balance. Cost: ${costPoints}, Balance: ${teamBalance}` }, { status: 400 })
-    }
-
-    if (type === 'remove_two') {
-      // Remove 2 wrong options
-      multiplierReduction = 0.25
-
       const eliminated: string[] = currentState.eliminated_options || []
       const wrongOptions = currentState.options.filter(
         (o: { id: string; is_correct: boolean }) => !o.is_correct && !eliminated.includes(o.id)
       )
 
       if (wrongOptions.length < 2) {
-        return NextResponse.json({ error: 'Not enough wrong options to remove' }, { status: 400 })
+        return NextResponse.json({ error: 'لا يوجد خيارات خاطئة كافية للحذف' }, { status: 400 })
       }
 
       const toRemove = shuffle(wrongOptions).slice(0, 2).map((o) => (o as { id: string }).id)
-      const newEliminated = [...eliminated, ...toRemove]
-
-      newState.eliminated_options = newEliminated
-      newState.reward_multiplier = Math.max(0.25, (currentState.reward_multiplier ?? 1.0) - multiplierReduction)
+      newState.eliminated_options = [...eliminated, ...toRemove]
+      newState.reward_multiplier = newMultiplier
       newState.helplines_used = [...helplines_used, type]
-
-      // Update removes used
-      if (isTeamA) {
-        db.prepare('UPDATE game_sessions SET team_a_removes_used = team_a_removes_used + 1 WHERE id = ?').run(session.id)
-      } else {
-        db.prepare('UPDATE game_sessions SET team_b_removes_used = team_b_removes_used + 1 WHERE id = ?').run(session.id)
-      }
 
       // Deduct cost
       if (isTeamA) {
@@ -256,108 +194,103 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        eliminated_options: newEliminated,
+        eliminated_options: newState.eliminated_options,
         options: newState.options,
         reward_multiplier: newState.reward_multiplier,
       })
     }
 
-    // For question-changing helplines
+    // Question-changing helplines
     let targetContestantId: number
     let newQuestionId: number | null = null
+    let wildQuestionData: { question_text: string; options: Array<{ id: string; text: string; is_correct: boolean }> } | null = null
 
     if (type === 'same_person') {
-      multiplierReduction = 0.5
       targetContestantId = currentState.contestant_id
 
-      // Get unused questions for same contestant
-      const usedRows = db.prepare(`
-        SELECT question_id FROM used_questions WHERE session_id = ? AND contestant_id = ?
-      `).all(session.id, targetContestantId) as Array<{ question_id: number }>
+      const usedRows = db.prepare(`SELECT question_id FROM used_questions WHERE session_id = ? AND contestant_id = ?`)
+        .all(session.id, targetContestantId) as Array<{ question_id: number }>
       const usedIds = new Set(usedRows.map(r => r.question_id))
       usedIds.add(currentState.question_id)
 
       const answeredQuestions = db.prepare(`
-        SELECT q.id FROM questions q
-        JOIN answers a ON a.question_id = q.id
-        WHERE a.contestant_id = ?
+        SELECT q.id FROM questions q JOIN answers a ON a.question_id = q.id WHERE a.contestant_id = ?
       `).all(targetContestantId) as Array<{ id: number }>
 
       const available = answeredQuestions.filter(q => !usedIds.has(q.id))
       if (available.length === 0) {
-        return NextResponse.json({ error: 'No more questions available for this contestant' }, { status: 400 })
+        return NextResponse.json({ error: 'لا توجد أسئلة أخرى لهذا المتسابق' }, { status: 400 })
       }
       newQuestionId = available[Math.floor(Math.random() * available.length)].id
 
     } else if (type === 'opposing_team') {
-      multiplierReduction = 0.5
+      // Opposing team = the team being asked about (already the opposing team when this is called)
       const opposingTeam = session.current_team === 'A' ? 'B' : 'A'
-
-      const opposingContestants = db.prepare(
-        'SELECT id FROM contestants WHERE team = ?'
-      ).all(opposingTeam) as Array<{ id: number }>
+      const opposingContestants = db.prepare('SELECT id FROM contestants WHERE team = ?').all(opposingTeam) as Array<{ id: number }>
 
       if (opposingContestants.length === 0) {
-        return NextResponse.json({ error: 'No contestants in opposing team' }, { status: 400 })
+        return NextResponse.json({ error: 'لا يوجد متسابقون في الفريق المنافس' }, { status: 400 })
       }
 
-      // Pick random contestant from opposing team that has answered questions
-      const shuffled = shuffle(opposingContestants)
+      // Exclude current contestant, pick a different one
+      const others = shuffle(opposingContestants.filter(c => c.id !== currentState.contestant_id))
       let found = false
 
-      for (const c of shuffled) {
+      for (const c of others) {
         const answeredQuestions = db.prepare(`
-          SELECT q.id FROM questions q
-          JOIN answers a ON a.question_id = q.id
-          WHERE a.contestant_id = ?
+          SELECT q.id FROM questions q JOIN answers a ON a.question_id = q.id WHERE a.contestant_id = ?
         `).all(c.id) as Array<{ id: number }>
 
         if (answeredQuestions.length > 0) {
           targetContestantId = c.id
-          const q = answeredQuestions[Math.floor(Math.random() * answeredQuestions.length)]
-          newQuestionId = q.id
+          newQuestionId = answeredQuestions[Math.floor(Math.random() * answeredQuestions.length)].id
           found = true
           break
         }
       }
 
       if (!found) {
-        return NextResponse.json({ error: 'No answers available from opposing team' }, { status: 400 })
+        // Fall back to any opposing contestant including current
+        for (const c of shuffle(opposingContestants)) {
+          const answeredQuestions = db.prepare(`
+            SELECT q.id FROM questions q JOIN answers a ON a.question_id = q.id WHERE a.contestant_id = ?
+          `).all(c.id) as Array<{ id: number }>
+
+          if (answeredQuestions.length > 0) {
+            targetContestantId = c.id
+            newQuestionId = answeredQuestions[Math.floor(Math.random() * answeredQuestions.length)].id
+            found = true
+            break
+          }
+        }
+      }
+
+      if (!found) {
+        return NextResponse.json({ error: 'لا توجد إجابات من الفريق المنافس' }, { status: 400 })
       }
 
     } else if (type === 'wild') {
-      multiplierReduction = 0.5
+      // Use wild_questions table
+      const wildQs = db.prepare('SELECT * FROM wild_questions ORDER BY RANDOM() LIMIT 1').get() as {
+        id: number; question_text: string; correct_answer: string;
+        wrong_answer_1: string; wrong_answer_2: string; wrong_answer_3: string; wrong_answer_4: string
+      } | undefined
 
-      const wildContestants = db.prepare(
-        'SELECT id FROM contestants WHERE team = ?'
-      ).all('WILD') as Array<{ id: number }>
-
-      if (wildContestants.length === 0) {
-        return NextResponse.json({ error: 'No wild contestants available' }, { status: 400 })
+      if (!wildQs) {
+        return NextResponse.json({ error: 'لا توجد أسئلة للشخصية الخاصة. أضف أسئلة من لوحة التحكم.' }, { status: 400 })
       }
 
-      const shuffled = shuffle(wildContestants)
-      let found = false
+      const allOptions = shuffle([
+        { text: wildQs.correct_answer, is_correct: true },
+        { text: wildQs.wrong_answer_1, is_correct: false },
+        { text: wildQs.wrong_answer_2, is_correct: false },
+        { text: wildQs.wrong_answer_3, is_correct: false },
+        { text: wildQs.wrong_answer_4, is_correct: false },
+      ])
+      const options = allOptions.map((opt, i) => ({ id: OPTION_LABELS[i], text: opt.text, is_correct: opt.is_correct }))
 
-      for (const c of shuffled) {
-        const answeredQuestions = db.prepare(`
-          SELECT q.id FROM questions q
-          JOIN answers a ON a.question_id = q.id
-          WHERE a.contestant_id = ?
-        `).all(c.id) as Array<{ id: number }>
-
-        if (answeredQuestions.length > 0) {
-          targetContestantId = c.id
-          const q = answeredQuestions[Math.floor(Math.random() * answeredQuestions.length)]
-          newQuestionId = q.id
-          found = true
-          break
-        }
-      }
-
-      if (!found) {
-        return NextResponse.json({ error: 'No answers available from wild contestants' }, { status: 400 })
-      }
+      wildQuestionData = { question_text: wildQs.question_text, options }
+      targetContestantId = currentState.contestant_id // keep same for state, but question is custom
     } else {
       return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
     }
@@ -369,19 +302,38 @@ export async function POST(request: NextRequest) {
       db.prepare('UPDATE game_sessions SET team_b_score = team_b_score - ? WHERE id = ?').run(costPoints, session.id)
     }
 
-    const newMultiplier = Math.max(0.25, (currentState.reward_multiplier ?? 1.0) - multiplierReduction)
     const newHelplines = [...helplines_used, type]
-    const wager = currentState.wager || 100
 
-    // Build new question
-    const result = await buildQuestion(
-      session,
-      targetContestantId!,
-      newQuestionId!,
-      newMultiplier,
-      newHelplines,
-      wager
-    )
+    if (type === 'wild' && wildQuestionData) {
+      newState = {
+        contestant_id: targetContestantId!,
+        contestant_name: currentState.contestant_name,
+        question_id: null,
+        question_text: wildQuestionData.question_text,
+        wager: currentState.wager,
+        reward_multiplier: newMultiplier,
+        options: wildQuestionData.options,
+        eliminated_options: [],
+        helplines_used: newHelplines,
+        selected_option: null,
+        last_result: null,
+        is_wild_question: true,
+      }
+
+      db.prepare('UPDATE game_sessions SET current_state = ? WHERE id = ?').run(JSON.stringify(newState), session.id)
+
+      return NextResponse.json({
+        success: true,
+        question_text: wildQuestionData.question_text,
+        contestant_name: currentState.contestant_name,
+        options: wildQuestionData.options,
+        reward_multiplier: newMultiplier,
+      })
+    }
+
+    // Build new question for same_person and opposing_team
+    const contestant = db.prepare('SELECT id, name FROM contestants WHERE id = ?').get(targetContestantId!) as { id: number; name: string }
+    const result = await buildNormalQuestion(targetContestantId!, newQuestionId!, wager, contestant.name)
 
     if (!result) {
       return NextResponse.json({ error: 'Failed to build question' }, { status: 500 })
@@ -389,18 +341,15 @@ export async function POST(request: NextRequest) {
 
     // Mark new question as used
     try {
-      db.prepare(`
-        INSERT OR IGNORE INTO used_questions (session_id, contestant_id, question_id)
-        VALUES (?, ?, ?)
-      `).run(session.id, targetContestantId!, newQuestionId!)
+      db.prepare(`INSERT OR IGNORE INTO used_questions (session_id, contestant_id, question_id) VALUES (?, ?, ?)`)
+        .run(session.id, targetContestantId!, newQuestionId!)
     } catch { /* ignore */ }
 
-    // Update state
     newState = {
       contestant_id: targetContestantId!,
-      contestant_name: result.contestant.name,
+      contestant_name: contestant.name,
       question_id: newQuestionId!,
-      question_text: result.question.text,
+      question_text: result.questionText,
       wager: currentState.wager,
       reward_multiplier: newMultiplier,
       options: result.options,
@@ -410,14 +359,13 @@ export async function POST(request: NextRequest) {
       last_result: null,
     }
 
-    db.prepare(`
-      UPDATE game_sessions SET current_state = ?, last_question_id = ? WHERE id = ?
-    `).run(JSON.stringify(newState), newQuestionId!, session.id)
+    db.prepare('UPDATE game_sessions SET current_state = ?, last_question_id = ? WHERE id = ?')
+      .run(JSON.stringify(newState), newQuestionId!, session.id)
 
     return NextResponse.json({
       success: true,
-      question_text: result.question.text,
-      contestant_name: result.contestant.name,
+      question_text: result.questionText,
+      contestant_name: contestant.name,
       contestant_id: targetContestantId!,
       question_id: newQuestionId!,
       options: result.options,

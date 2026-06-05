@@ -20,13 +20,14 @@ function initDb(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS questions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       text TEXT NOT NULL,
+      personalized_template TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS contestants (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      team TEXT NOT NULL CHECK(team IN ('A','B','WILD')),
+      team TEXT NOT NULL CHECK(team IN ('A','B','WILD','UNASSIGNED')) DEFAULT 'UNASSIGNED',
       token TEXT UNIQUE NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -60,30 +61,83 @@ function initDb(db: Database.Database) {
       question_id INTEGER NOT NULL REFERENCES questions(id),
       UNIQUE(session_id, contestant_id, question_id)
     );
+
+    CREATE TABLE IF NOT EXISTS wild_questions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      question_text TEXT NOT NULL,
+      correct_answer TEXT NOT NULL,
+      wrong_answer_1 TEXT NOT NULL,
+      wrong_answer_2 TEXT NOT NULL,
+      wrong_answer_3 TEXT NOT NULL,
+      wrong_answer_4 TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `)
+
+  // Migrate: add personalized_template column if not exists
+  try {
+    db.exec(`ALTER TABLE questions ADD COLUMN personalized_template TEXT`)
+  } catch { /* already exists */ }
+
+  // Migrate: update team CHECK to allow UNASSIGNED (SQLite doesn't support ALTER COLUMN CHECK easily, skip)
 
   // Insert default questions if table is empty
   const count = db.prepare('SELECT COUNT(*) as cnt FROM questions').get() as { cnt: number }
   if (count.cnt === 0) {
-    const insertQuestion = db.prepare('INSERT INTO questions (text) VALUES (?)')
-    const defaultQuestions = [
-      'ما هو تاريخ ميلادك؟',
-      'ما هو لونك المفضل؟',
-      'ما هو معدلك في الثانوية العامة؟',
-      'ما اسم أفضل أصدقائك؟',
-      'ما هي وجبتك المفضلة؟',
-      'أي دولة تتمنى زيارتها أكثر؟',
-      'ما هي آيتك المفضلة من القرآن الكريم؟',
-      'أي سورة تستمتع بسماعها أكثر؟',
-      'ما هو مقاس حذائك؟',
-      'إذا حصلت على مليون دينار بحريني فجأة، ماذا ستفعل أولاً؟',
+    const insertQuestion = db.prepare('INSERT INTO questions (text, personalized_template) VALUES (?, ?)')
+    const defaultQuestions: [string, string][] = [
+      ['ما هو تاريخ ميلادك؟', 'ما هو تاريخ ميلاد {name}؟'],
+      ['ما هو لونك المفضل؟', 'ما هو اللون المفضل لـ{name}؟'],
+      ['ما هو معدلك في الثانوية العامة؟', 'ما هو معدل {name} في الثانوية العامة؟'],
+      ['ما اسم أفضل أصدقائك؟', 'ما اسم أفضل أصدقاء {name}؟'],
+      ['ما هي وجبتك المفضلة؟', 'ما هي الوجبة المفضلة لـ{name}؟'],
+      ['أي دولة تتمنى زيارتها أكثر؟', 'أي دولة يتمنى {name} زيارتها أكثر؟'],
+      ['ما هي آيتك المفضلة من القرآن الكريم؟', 'ما هي الآية المفضلة لـ{name} من القرآن الكريم؟'],
+      ['أي سورة تستمتع بسماعها أكثر؟', 'أي سورة يستمتع {name} بسماعها أكثر؟'],
+      ['ما هو مقاس حذائك؟', 'ما هو مقاس حذاء {name}؟'],
+      ['إذا حصلت على مليون دينار بحريني فجأة، ماذا ستفعل أولاً؟', 'إذا حصل {name} على مليون دينار بحريني فجأة، ماذا سيفعل أولاً؟'],
     ]
-    const insertMany = db.transaction((questions: string[]) => {
-      for (const q of questions) {
-        insertQuestion.run(q)
+    const insertMany = db.transaction((questions: [string, string][]) => {
+      for (const [text, template] of questions) {
+        insertQuestion.run(text, template)
       }
     })
     insertMany(defaultQuestions)
+  } else {
+    // Backfill personalized_template for existing default questions
+    const defaultTemplates: Record<number, string> = {
+      1: 'ما هو تاريخ ميلاد {name}؟',
+      2: 'ما هو اللون المفضل لـ{name}؟',
+      3: 'ما هو معدل {name} في الثانوية العامة؟',
+      4: 'ما اسم أفضل أصدقاء {name}؟',
+      5: 'ما هي الوجبة المفضلة لـ{name}؟',
+      6: 'أي دولة يتمنى {name} زيارتها أكثر؟',
+      7: 'ما هي الآية المفضلة لـ{name} من القرآن الكريم؟',
+      8: 'أي سورة يستمتع {name} بسماعها أكثر؟',
+      9: 'ما هو مقاس حذاء {name}؟',
+      10: 'إذا حصل {name} على مليون دينار بحريني فجأة، ماذا سيفعل أولاً؟',
+    }
+    for (const [id, template] of Object.entries(defaultTemplates)) {
+      db.prepare('UPDATE questions SET personalized_template = ? WHERE id = ? AND personalized_template IS NULL')
+        .run(template, parseInt(id))
+    }
+  }
+
+  // Insert default settings if not present
+  const defaultSettings: Record<string, object> = {
+    helpline_remove_two: { cost: 50, multiplier_reduction: 0.25 },
+    helpline_same_person: { cost: 100, multiplier_reduction: 0.5 },
+    helpline_opposing_team: { cost: 75, multiplier_reduction: 0.5 },
+    helpline_wild: { cost: 200, multiplier_reduction: 0.5 },
+  }
+  const upsertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
+  for (const [key, val] of Object.entries(defaultSettings)) {
+    upsertSetting.run(key, JSON.stringify(val))
   }
 }
 

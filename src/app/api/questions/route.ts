@@ -33,7 +33,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Question text is required' }, { status: 400 })
     }
 
-    const result = db.prepare('INSERT INTO questions (text) VALUES (?)').run(text.trim())
+    const { personalized_template } = body
+    const result = db.prepare('INSERT INTO questions (text, personalized_template) VALUES (?, ?)').run(text.trim(), personalized_template?.trim() || null)
     const question = db.prepare('SELECT * FROM questions WHERE id = ?').get(result.lastInsertRowid)
 
     return NextResponse.json(question, { status: 201 })

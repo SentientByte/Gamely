@@ -58,14 +58,16 @@ export default function DashboardPage() {
   }
 
   const navLinks = [
-    { href: '/admin/questions', label: 'Questions', icon: '❓', desc: 'Manage game questions', color: 'from-violet-600 to-purple-700' },
-    { href: '/admin/contestants', label: 'Contestants', icon: '👥', desc: 'Manage team members', color: 'from-blue-600 to-cyan-700' },
-    { href: '/admin/answers', label: 'Answers', icon: '📝', desc: 'View & edit all answers', color: 'from-emerald-600 to-teal-700' },
-    { href: '/admin/game', label: 'Game Control', icon: '🎮', desc: 'Run the live game show', color: 'from-amber-500 to-orange-600' },
+    { href: '/admin/questions', label: 'الأسئلة', icon: '❓', desc: 'إدارة أسئلة اللعبة', color: 'from-violet-600 to-purple-700' },
+    { href: '/admin/contestants', label: 'المتسابقون', icon: '👥', desc: 'إدارة المتسابقين', color: 'from-blue-600 to-cyan-700' },
+    { href: '/admin/answers', label: 'الإجابات', icon: '📝', desc: 'عرض وتعديل الإجابات', color: 'from-emerald-600 to-teal-700' },
+    { href: '/admin/game', label: 'التحكم باللعبة', icon: '🎮', desc: 'إدارة اللعبة المباشرة', color: 'from-amber-500 to-orange-600' },
+    { href: '/admin/wild-questions', label: 'أسئلة الشخصية الخاصة', icon: '👶', desc: 'إضافة أسئلة مخصصة', color: 'from-amber-700 to-yellow-800' },
+    { href: '/admin/settings', label: 'إعدادات المساعدات', icon: '⚙️', desc: 'تكلفة وتأثير المساعدات', color: 'from-slate-600 to-slate-700' },
   ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-6">
+    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-6">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">

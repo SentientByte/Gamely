@@ -12,7 +12,21 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const teamAScore = body.team_a_score ?? 0
     const teamBScore = body.team_b_score ?? 0
-    const startingTeam = body.starting_team ?? 'A'
+    const teamAIds: number[] = body.team_a_ids ?? []
+    const teamBIds: number[] = body.team_b_ids ?? []
+
+    // Update team assignments for non-WILD contestants
+    const assignTeam = db.prepare(`UPDATE contestants SET team = ? WHERE id = ? AND team != 'WILD'`)
+    const resetUnassigned = db.prepare(`UPDATE contestants SET team = 'UNASSIGNED' WHERE team IN ('A','B')`)
+
+    db.transaction(() => {
+      resetUnassigned.run()
+      for (const id of teamAIds) assignTeam.run('A', id)
+      for (const id of teamBIds) assignTeam.run('B', id)
+    })()
+
+    // Randomly decide starting team
+    const startingTeam = Math.random() < 0.5 ? 'A' : 'B'
 
     // Delete any existing sessions
     db.prepare('DELETE FROM game_sessions').run()
@@ -29,7 +43,8 @@ export async function POST(request: NextRequest) {
       session: {
         ...s,
         current_state: JSON.parse(s.current_state || '{}'),
-      }
+      },
+      starting_team: startingTeam,
     })
   } catch {
     return NextResponse.json({ error: 'Database error' }, { status: 500 })
