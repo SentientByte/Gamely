@@ -60,11 +60,10 @@ export default function DashboardPage() {
   const navLinks = [
     { href: '/admin/questions', label: 'الأسئلة', icon: '❓', desc: 'إدارة أسئلة اللعبة', color: 'from-violet-600 to-purple-700' },
     { href: '/admin/contestants', label: 'المتسابقون', icon: '👥', desc: 'إدارة المتسابقين', color: 'from-blue-600 to-cyan-700' },
-    { href: '/admin/answers', label: 'الإجابات', icon: '📝', desc: 'عرض وتعديل الإجابات', color: 'from-emerald-600 to-teal-700' },
+    { href: '/admin/custom-wrong-answers', label: 'مدير الإجابات', icon: '📝', desc: 'عرض وتعديل جميع الإجابات الصحيحة والخاطئة', color: 'from-emerald-600 to-teal-700' },
     { href: '/admin/game', label: 'التحكم باللعبة', icon: '🎮', desc: 'إدارة اللعبة المباشرة', color: 'from-amber-500 to-orange-600' },
     { href: '/admin/wild-questions', label: 'أسئلة الشخصية الخاصة', icon: '👶', desc: 'إضافة أسئلة مخصصة', color: 'from-amber-700 to-yellow-800' },
     { href: '/admin/custom-questions', label: 'أسئلة مخصصة للاعبين', icon: '🎯', desc: 'أسئلة خاصة بكل متسابق', color: 'from-rose-700 to-pink-800' },
-    { href: '/admin/custom-wrong-answers', label: 'إجابات خاطئة مخصصة', icon: '✗', desc: 'تحديد الإجابات الخاطئة لكل سؤال', color: 'from-red-800 to-rose-900' },
     { href: '/admin/settings', label: 'إعدادات المساعدات', icon: '⚙️', desc: 'تكلفة وتأثير المساعدات', color: 'from-slate-600 to-slate-700' },
   ]
 
