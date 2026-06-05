@@ -77,12 +77,44 @@ function initDb(db: Database.Database) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS custom_player_questions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      contestant_id INTEGER NOT NULL REFERENCES contestants(id) ON DELETE CASCADE,
+      question_text TEXT NOT NULL,
+      correct_answer TEXT NOT NULL,
+      wrong_answer_1 TEXT NOT NULL,
+      wrong_answer_2 TEXT NOT NULL,
+      wrong_answer_3 TEXT NOT NULL,
+      wrong_answer_4 TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS custom_wrong_answers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      contestant_id INTEGER NOT NULL REFERENCES contestants(id) ON DELETE CASCADE,
+      question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+      wrong_answer TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(contestant_id, question_id, wrong_answer)
+    );
   `)
 
   // Migrate: add personalized_template column if not exists
   try {
     db.exec(`ALTER TABLE questions ADD COLUMN personalized_template TEXT`)
   } catch { /* already exists */ }
+
+  // Migrate: add new game_sessions columns
+  const gameMigrations = [
+    `ALTER TABLE game_sessions ADD COLUMN wager_usage TEXT DEFAULT '{}'`,
+    `ALTER TABLE game_sessions ADD COLUMN steal_used_a INTEGER DEFAULT 0`,
+    `ALTER TABLE game_sessions ADD COLUMN steal_used_b INTEGER DEFAULT 0`,
+    `ALTER TABLE game_sessions ADD COLUMN used_question_topics TEXT DEFAULT '[]'`,
+  ]
+  for (const sql of gameMigrations) {
+    try { db.exec(sql) } catch { /* already exists */ }
+  }
 
   // Migrate: update team CHECK to allow UNASSIGNED (SQLite doesn't support ALTER COLUMN CHECK easily, skip)
 

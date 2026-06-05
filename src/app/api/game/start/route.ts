@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
     db.prepare('DELETE FROM game_sessions').run()
 
     const result = db.prepare(`
-      INSERT INTO game_sessions (status, current_team, team_a_score, team_b_score, current_state)
-      VALUES ('wagering', ?, ?, ?, '{}')
+      INSERT INTO game_sessions (status, current_team, team_a_score, team_b_score, current_state, wager_usage, steal_used_a, steal_used_b, used_question_topics)
+      VALUES ('wagering', ?, ?, ?, '{}', '{}', 0, 0, '[]')
     `).run(startingTeam, teamAScore, teamBScore)
 
     const session = db.prepare('SELECT * FROM game_sessions WHERE id = ?').get(result.lastInsertRowid)
