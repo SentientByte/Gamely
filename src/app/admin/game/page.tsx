@@ -95,6 +95,23 @@ function playRingSound() {
   } catch { /* ignore */ }
 }
 
+function playTickSound() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.08)
+  } catch { /* ignore */ }
+}
+
 export default function GamePage() {
   const [session, setSession] = useState<Session | null>(null)
   const [contestants, setContestants] = useState<Contestant[]>([])
@@ -168,7 +185,9 @@ export default function GamePage() {
               playRingSound()
               return 0
             }
-            return prev - 1
+            const next = prev - 1
+            if (next <= 5) playTickSound()
+            return next
           })
         }, 1000)
       }
@@ -568,9 +587,9 @@ export default function GamePage() {
                 </div>
 
                 {/* Timer */}
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${timerBg}`}>
-                  <span className="text-sm text-slate-400">⏱</span>
-                  <span className={`text-2xl font-black tabular-nums ${timerColor}`}>{timeLeft}</span>
+                <div className={`flex items-center gap-3 px-5 py-2.5 rounded-2xl border-2 ${timerBg}`}>
+                  <span className="text-lg text-slate-400">⏱</span>
+                  <span className={`text-5xl font-black tabular-nums leading-none ${timerColor}`}>{timeLeft}</span>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -636,31 +655,37 @@ export default function GamePage() {
               <div className="space-y-2">
                 <h3 className="text-yellow-400 font-bold text-sm text-center mb-2">المساعدات (واحدة فقط)</h3>
 
-                <button onClick={() => handleHelpline('same_person')} disabled={actionLoading || helplineUsed}
-                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${helplineUsed ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-purple-600/50 bg-purple-900/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500'}`}>
+                {st?.is_steal && (
+                  <div className="text-center text-orange-400 text-xs bg-orange-900/30 border border-orange-700/50 rounded-lg p-2 mb-2">
+                    ⚔️ المساعدات غير متاحة في وضع السرقة
+                  </div>
+                )}
+
+                <button onClick={() => handleHelpline('same_person')} disabled={actionLoading || helplineUsed || !!st?.is_steal}
+                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-purple-600/50 bg-purple-900/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500'}`}>
                   <div className="font-bold">🔄 تبديل السؤال</div>
                   <div className="text-xs opacity-70 mt-0.5">نفس المتسابق • {settings.helpline_same_person.cost} نقطة • ↓{Math.round(settings.helpline_same_person.multiplier_reduction * 100)}%</div>
                 </button>
 
-                <button onClick={() => handleHelpline('opposing_team')} disabled={actionLoading || helplineUsed}
-                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${helplineUsed ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-cyan-600/50 bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50 hover:border-cyan-500'}`}>
+                <button onClick={() => handleHelpline('opposing_team')} disabled={actionLoading || helplineUsed || !!st?.is_steal}
+                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-cyan-600/50 bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50 hover:border-cyan-500'}`}>
                   <div className="font-bold">🎲 متسابق مختلف</div>
                   <div className="text-xs opacity-70 mt-0.5">{settings.helpline_opposing_team.cost} نقطة • ↓{Math.round(settings.helpline_opposing_team.multiplier_reduction * 100)}%</div>
                 </button>
 
-                <button onClick={() => handleHelpline('wild')} disabled={actionLoading || helplineUsed}
-                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${helplineUsed ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-amber-600/50 bg-amber-900/30 text-amber-300 hover:bg-amber-900/50 hover:border-amber-500'}`}>
+                <button onClick={() => handleHelpline('wild')} disabled={actionLoading || helplineUsed || !!st?.is_steal}
+                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-amber-600/50 bg-amber-900/30 text-amber-300 hover:bg-amber-900/50 hover:border-amber-500'}`}>
                   <div className="font-bold">👶 سؤال عن الشخصية الخاصة</div>
                   <div className="text-xs opacity-70 mt-0.5">{settings.helpline_wild.cost} نقطة • ↓{Math.round(settings.helpline_wild.multiplier_reduction * 100)}%</div>
                 </button>
 
-                <button onClick={() => handleHelpline('remove_two')} disabled={actionLoading || helplineUsed}
-                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${helplineUsed ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-red-600/50 bg-red-900/30 text-red-300 hover:bg-red-900/50 hover:border-red-500'}`}>
+                <button onClick={() => handleHelpline('remove_two')} disabled={actionLoading || helplineUsed || !!st?.is_steal}
+                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-red-600/50 bg-red-900/30 text-red-300 hover:bg-red-900/50 hover:border-red-500'}`}>
                   <div className="font-bold">✂️ حذف إجابتين خاطئتين</div>
                   <div className="text-xs opacity-70 mt-0.5">{settings.helpline_remove_two.cost} نقطة • ↓{Math.round(settings.helpline_remove_two.multiplier_reduction * 100)}%</div>
                 </button>
 
-                {helplineUsed && <div className="text-center text-slate-500 text-xs mt-1">تم استخدام المساعدة لهذا السؤال</div>}
+                {helplineUsed && !st?.is_steal && <div className="text-center text-slate-500 text-xs mt-1">تم استخدام المساعدة لهذا السؤال</div>}
               </div>
             </div>
           </div>
