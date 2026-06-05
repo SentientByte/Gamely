@@ -49,7 +49,8 @@ export async function PUT(
       return NextResponse.json({ error: 'Question text is required' }, { status: 400 })
     }
 
-    const result = db.prepare('UPDATE questions SET text = ? WHERE id = ?').run(text.trim(), id)
+    const { personalized_template } = body
+    const result = db.prepare('UPDATE questions SET text = ?, personalized_template = ? WHERE id = ?').run(text.trim(), personalized_template?.trim() || null, id)
     if (result.changes === 0) {
       return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     }

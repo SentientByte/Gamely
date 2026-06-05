@@ -34,14 +34,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Contestant name is required' }, { status: 400 })
     }
 
-    if (!team || !['A', 'B', 'WILD'].includes(team)) {
-      return NextResponse.json({ error: 'Team must be A, B, or WILD' }, { status: 400 })
+    if (team && !['A', 'B', 'WILD', 'UNASSIGNED'].includes(team)) {
+      return NextResponse.json({ error: 'Team must be A, B, WILD, or UNASSIGNED' }, { status: 400 })
     }
 
+    const assignedTeam = team || 'UNASSIGNED'
     const token = randomUUID()
     const result = db.prepare(
       'INSERT INTO contestants (name, team, token) VALUES (?, ?, ?)'
-    ).run(name.trim(), team, token)
+    ).run(name.trim(), assignedTeam, token)
 
     const contestant = db.prepare('SELECT * FROM contestants WHERE id = ?').get(result.lastInsertRowid)
     return NextResponse.json(contestant, { status: 201 })

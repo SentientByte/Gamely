@@ -15,55 +15,43 @@ const OPTION_LABELS = ['أ', 'ب', 'ج', 'د', 'هـ']
 const FALLBACK_WRONG = ['لا أعرف', 'ربما', 'لم أقرر بعد', 'سؤال صعب', 'لا شيء من هذا']
 
 const MONTH_NAMES_AR = {
-  '01': 'يناير',
-  '02': 'فبراير',
-  '03': 'مارس',
-  '04': 'أبريل',
-  '05': 'مايو',
-  '06': 'يونيو',
-  '07': 'يوليو',
-  '08': 'أغسطس',
-  '09': 'سبتمبر',
-  '10': 'أكتوبر',
-  '11': 'نوفمبر',
-  '12': 'ديسمبر',
+  '01': 'يناير', '02': 'فبراير', '03': 'مارس', '04': 'أبريل',
+  '05': 'مايو', '06': 'يونيو', '07': 'يوليو', '08': 'أغسطس',
+  '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر',
 }
 
 function formatBirthdayWithMonthName(answer: string): string {
   const parts = answer.split('/')
   if (parts.length === 2) {
-    const monthNum = parts[0]
-    const day = parts[1]
-    const monthName = MONTH_NAMES_AR[monthNum as keyof typeof MONTH_NAMES_AR]
-    if (monthName) {
-      return `${monthName}/${day}`
-    }
+    const monthName = MONTH_NAMES_AR[parts[0] as keyof typeof MONTH_NAMES_AR]
+    if (monthName) return `${monthName}/${parts[1]}`
   }
   return answer
 }
 
-const QUESTION_TEMPLATES = {
-  1: (answer: string) => `من وُلد في ${formatBirthdayWithMonthName(answer)}؟`,
-  2: (answer: string) => `من لونه المفضل هو ${answer}؟`,
-  3: (answer: string) => `من معدله في الثانوية العامة ${answer}؟`,
-  4: (answer: string) => `من أفضل أصدقاؤه ${answer}؟`,
-  5: (answer: string) => `من وجبته المفضلة هي ${answer}؟`,
-  6: (answer: string) => `من يتمنى زيارة ${answer}؟`,
-  7: (answer: string) => `من آيته المفضلة هي ${answer}؟`,
-  8: (answer: string) => `من سورته المفضلة هي ${answer}؟`,
-  9: (answer: string) => `من مقاس حذائه ${answer}؟`,
-  10: (answer: string) => `من يريد أن يفعل أولاً: ${answer}؟`,
+const REVERSE_TEMPLATES: Record<number, (a: string) => string> = {
+  1: (a) => `من وُلد في ${formatBirthdayWithMonthName(a)}؟`,
+  2: (a) => `من لونه المفضل هو ${a}؟`,
+  3: (a) => `من معدله في الثانوية العامة ${a}؟`,
+  4: (a) => `من أفضل أصدقاؤه ${a}؟`,
+  5: (a) => `من وجبته المفضلة هي ${a}؟`,
+  6: (a) => `من يتمنى زيارة ${a}؟`,
+  7: (a) => `من آيته المفضلة هي ${a}؟`,
+  8: (a) => `من سورته المفضلة هي ${a}؟`,
+  9: (a) => `من مقاس حذائه ${a}؟`,
+  10: (a) => `من يريد أن يفعل أولاً: ${a}؟`,
 }
 
-function buildReverseQuestion(
-  questionId: number,
-  correctAnswer: string
-): string {
-  const template = QUESTION_TEMPLATES[questionId as keyof typeof QUESTION_TEMPLATES]
-  if (!template) {
-    return `من الإجابة الصحيحة هي ${correctAnswer}؟`
+function personalizeQuestion(template: string | null | undefined, questionText: string, contestantName: string): string {
+  if (template) {
+    return template.replace('{name}', contestantName)
   }
-  return template(correctAnswer)
+  return `سؤال عن ${contestantName}: ${questionText}`
+}
+
+function buildReverseQuestion(questionId: number, correctAnswer: string, questionText: string): string {
+  const template = REVERSE_TEMPLATES[questionId]
+  return template ? template(correctAnswer) : `من الإجابة الصحيحة هي ${correctAnswer}؟`
 }
 
 export async function POST(request: NextRequest) {
@@ -74,66 +62,73 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { contestant_id, question_id } = body
+    const { contestant_id, question_id, wager: bodyWager } = body
 
     if (!contestant_id) {
       return NextResponse.json({ error: 'contestant_id is required' }, { status: 400 })
     }
 
     const session = db.prepare('SELECT * FROM game_sessions ORDER BY id DESC LIMIT 1').get() as {
-      id: number
-      status: string
-      current_team: string
-      current_state: string
-      last_question_id: number | null
-      [key: string]: unknown
+      id: number; status: string; current_team: string; current_state: string; last_question_id: number | null
     } | undefined
 
     if (!session) {
       return NextResponse.json({ error: 'No active game session' }, { status: 400 })
     }
 
-    // Verify contestant exists and belongs to the current team
     const contestant = db.prepare('SELECT * FROM contestants WHERE id = ?').get(contestant_id) as {
-      id: number
-      name: string
-      team: string
+      id: number; name: string; team: string
     } | undefined
 
     if (!contestant) {
       return NextResponse.json({ error: 'Contestant not found' }, { status: 404 })
     }
 
+    // Questions must be about the opposing team's members
+    const opposingTeam = session.current_team === 'A' ? 'B' : 'A'
+    if (contestant.team !== opposingTeam) {
+      return NextResponse.json({ error: 'Questions must be about opposing team members' }, { status: 400 })
+    }
+
+    const currentState = JSON.parse(session.current_state || '{}')
+    // Accept wager from body (combined wager+question call) or existing state
+    const wager = bodyWager ?? currentState.wager ?? 100
+    const rewardMultiplier = currentState.reward_multiplier ?? 1.0
+    const helplines_used = currentState.helplines_used || []
+
+    // Save wager to session state now
+    const updatedState = { ...currentState, wager, reward_multiplier: rewardMultiplier, helplines_used }
+
     // Get already used question IDs for this contestant in this session
     const usedRows = db.prepare(`
-      SELECT question_id FROM used_questions
-      WHERE session_id = ? AND contestant_id = ?
+      SELECT question_id FROM used_questions WHERE session_id = ? AND contestant_id = ?
     `).all(session.id, contestant_id) as Array<{ question_id: number }>
     const usedQuestionIds = new Set(usedRows.map(r => r.question_id))
 
-    let selectedQuestion: { id: number; text: string } | undefined
+    let selectedQuestion: { id: number; text: string; personalized_template: string | null } | undefined
 
     if (question_id) {
-      selectedQuestion = db.prepare('SELECT id, text FROM questions WHERE id = ?').get(question_id) as typeof selectedQuestion
-      if (!selectedQuestion) {
-        return NextResponse.json({ error: 'Question not found' }, { status: 404 })
-      }
+      selectedQuestion = db.prepare('SELECT id, text, personalized_template FROM questions WHERE id = ?').get(question_id) as typeof selectedQuestion
+      if (!selectedQuestion) return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     } else {
-      // Pick random unused question for this contestant (avoid last question if possible)
-      const allQuestions = db.prepare('SELECT id, text FROM questions ORDER BY id ASC').all() as Array<{ id: number; text: string }>
-      const available = allQuestions.filter(q => !usedQuestionIds.has(q.id))
+      const allQuestions = db.prepare('SELECT id, text, personalized_template FROM questions ORDER BY id ASC').all() as Array<{ id: number; text: string; personalized_template: string | null }>
 
+      // Only use questions that this contestant has answered
+      const answeredIds = new Set(
+        (db.prepare('SELECT question_id FROM answers WHERE contestant_id = ?').all(contestant_id) as Array<{ question_id: number }>)
+          .map(r => r.question_id)
+      )
+
+      const available = allQuestions.filter(q => answeredIds.has(q.id) && !usedQuestionIds.has(q.id))
       if (available.length === 0) {
         return NextResponse.json({ error: 'No more questions available for this contestant' }, { status: 400 })
       }
 
-      // Prefer not to repeat last question
       const preferred = available.filter(q => q.id !== session.last_question_id)
       const pool = preferred.length > 0 ? preferred : available
       selectedQuestion = pool[Math.floor(Math.random() * pool.length)]
     }
 
-    // Get correct answer
     const correctAnswerRow = db.prepare(`
       SELECT answer FROM answers WHERE contestant_id = ? AND question_id = ?
     `).get(contestant_id, selectedQuestion.id) as { answer: string } | undefined
@@ -143,51 +138,28 @@ export async function POST(request: NextRequest) {
     }
 
     const correctAnswer = correctAnswerRow.answer
-
-    // Get current state for wager/multiplier
-    const currentState = JSON.parse(session.current_state || '{}')
-    const wager = currentState.wager || 100
-    const rewardMultiplier = currentState.reward_multiplier ?? 1.0
-    const helplines_used = currentState.helplines_used || []
-
-    let questionText = selectedQuestion.text
+    let questionText: string
     let options: Array<{ id: string; text: string; is_correct: boolean }>
     let isReverseQuestion = false
 
-    // For high wagers (>499), use reverse question format
     if (wager > 499) {
       isReverseQuestion = true
-      questionText = buildReverseQuestion(selectedQuestion.id, correctAnswer)
+      questionText = buildReverseQuestion(selectedQuestion.id, correctAnswer, selectedQuestion.text)
 
-      // Get all contestants with their names
       const allContestants = db.prepare('SELECT id, name FROM contestants ORDER BY id ASC').all() as Array<{ id: number; name: string }>
-
       if (allContestants.length < 2) {
         return NextResponse.json({ error: 'Not enough contestants for reverse question' }, { status: 400 })
       }
 
-      // The correct answer is the name of the contestant we're asking about
-      const correctContestantName = contestant.name
-
-      // Get other contestant names (wrong answers)
-      const wrongNames = allContestants
-        .filter(c => c.id !== contestant_id)
-        .map(c => c.name)
-        .slice(0, 4)
-
-      // Build options array with contestant names and shuffle
+      const wrongNames = allContestants.filter(c => c.id !== contestant_id).map(c => c.name).slice(0, 4)
       const allOptions = shuffle([
-        { text: correctContestantName, is_correct: true },
+        { text: contestant.name, is_correct: true },
         ...wrongNames.map(t => ({ text: t, is_correct: false })),
       ])
-
-      options = allOptions.map((opt, i) => ({
-        id: OPTION_LABELS[i],
-        text: opt.text,
-        is_correct: opt.is_correct,
-      }))
+      options = allOptions.map((opt, i) => ({ id: OPTION_LABELS[i], text: opt.text, is_correct: opt.is_correct }))
     } else {
-      // Normal question format: get wrong answers from other contestants
+      questionText = personalizeQuestion(selectedQuestion.personalized_template, selectedQuestion.text, contestant.name)
+
       const otherAnswers = db.prepare(`
         SELECT DISTINCT answer FROM answers
         WHERE question_id = ? AND contestant_id != ? AND answer != ?
@@ -195,8 +167,6 @@ export async function POST(request: NextRequest) {
       `).all(selectedQuestion.id, contestant_id, correctAnswer) as Array<{ answer: string }>
 
       const wrongAnswerTexts = otherAnswers.map(r => r.answer)
-
-      // Pad with fallbacks if needed
       let padIndex = 0
       while (wrongAnswerTexts.length < 4) {
         const fallback = FALLBACK_WRONG[padIndex % FALLBACK_WRONG.length]
@@ -207,34 +177,22 @@ export async function POST(request: NextRequest) {
         if (padIndex > 20) break
       }
 
-      // Take exactly 4 wrong answers
       const finalWrong = wrongAnswerTexts.slice(0, 4)
-
-      // Build options array and shuffle
       const allOptions = shuffle([
         { text: correctAnswer, is_correct: true },
         ...finalWrong.map(t => ({ text: t, is_correct: false })),
       ])
-
-      options = allOptions.map((opt, i) => ({
-        id: OPTION_LABELS[i],
-        text: opt.text,
-        is_correct: opt.is_correct,
-      }))
+      options = allOptions.map((opt, i) => ({ id: OPTION_LABELS[i], text: opt.text, is_correct: opt.is_correct }))
     }
 
     // Mark question as used
     try {
-      db.prepare(`
-        INSERT OR IGNORE INTO used_questions (session_id, contestant_id, question_id)
-        VALUES (?, ?, ?)
-      `).run(session.id, contestant_id, selectedQuestion.id)
-    } catch {
-      // ignore duplicate
-    }
+      db.prepare(`INSERT OR IGNORE INTO used_questions (session_id, contestant_id, question_id) VALUES (?, ?, ?)`)
+        .run(session.id, contestant_id, selectedQuestion.id)
+    } catch { /* ignore */ }
 
-    // Update session state
     const newState = {
+      ...updatedState,
       contestant_id,
       contestant_name: contestant.name,
       question_id: selectedQuestion.id,
@@ -251,9 +209,7 @@ export async function POST(request: NextRequest) {
     }
 
     db.prepare(`
-      UPDATE game_sessions
-      SET status = 'questioning', current_state = ?, last_question_id = ?
-      WHERE id = ?
+      UPDATE game_sessions SET status = 'questioning', current_state = ?, last_question_id = ? WHERE id = ?
     `).run(JSON.stringify(newState), selectedQuestion.id, session.id)
 
     return NextResponse.json({
