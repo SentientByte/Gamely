@@ -3,18 +3,9 @@ import db from '@/lib/db'
 import { isValidAdminToken, ADMIN_COOKIE_NAME } from '@/lib/auth'
 
 const MONTH_NAMES_AR = {
-  '01': 'يناير',
-  '02': 'فبراير',
-  '03': 'مارس',
-  '04': 'أبريل',
-  '05': 'مايو',
-  '06': 'يونيو',
-  '07': 'يوليو',
-  '08': 'أغسطس',
-  '09': 'سبتمبر',
-  '10': 'أكتوبر',
-  '11': 'نوفمبر',
-  '12': 'ديسمبر',
+  '01': 'يناير', '02': 'فبراير', '03': 'مارس', '04': 'أبريل',
+  '05': 'مايو', '06': 'يونيو', '07': 'يوليو', '08': 'أغسطس',
+  '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر',
 }
 
 function formatBirthdayWithMonthName(answer: string): string {
@@ -23,18 +14,13 @@ function formatBirthdayWithMonthName(answer: string): string {
     const monthNum = parts[0]
     const day = parts[1]
     const monthName = MONTH_NAMES_AR[monthNum as keyof typeof MONTH_NAMES_AR]
-    if (monthName) {
-      return `${monthName}/${day}`
-    }
+    if (monthName) return `${monthName}/${day}`
   }
   return answer
 }
 
 function formatAnswerForDisplay(answer: string, questionId: number): string {
-  // For question 1 (birthday), format with month name
-  if (questionId === 1) {
-    return formatBirthdayWithMonthName(answer)
-  }
+  if (questionId === 1) return formatBirthdayWithMonthName(answer)
   return answer
 }
 
@@ -53,12 +39,9 @@ export async function POST(request: NextRequest) {
     }
 
     const session = db.prepare('SELECT * FROM game_sessions ORDER BY id DESC LIMIT 1').get() as {
-      id: number
-      status: string
-      current_team: string
-      team_a_score: number
-      team_b_score: number
-      current_state: string
+      id: number; status: string; current_team: string
+      team_a_score: number; team_b_score: number
+      current_state: string; steal_used_a: number; steal_used_b: number
     } | undefined
 
     if (!session || session.status !== 'questioning') {
@@ -71,6 +54,7 @@ export async function POST(request: NextRequest) {
     const multiplier: number = currentState.reward_multiplier ?? 1.0
     const questionId: number = currentState.question_id || 0
     const isReverseQuestion: boolean = currentState.is_reverse_question || false
+    const isSteal: boolean = currentState.is_steal || false
 
     const selectedOption = options.find(o => o.id === option_id)
     if (!selectedOption) {
@@ -79,23 +63,43 @@ export async function POST(request: NextRequest) {
 
     const correctOption = options.find(o => o.is_correct)
     const isCorrect = selectedOption.is_correct
-
-    let scoreChange: number
-    if (isCorrect) {
-      scoreChange = Math.round(wager * multiplier)
-    } else {
-      scoreChange = -Math.round(wager * 0.5)
-    }
-
     const isTeamA = session.current_team === 'A'
 
-    if (isTeamA) {
-      db.prepare('UPDATE game_sessions SET team_a_score = team_a_score + ? WHERE id = ?').run(scoreChange, session.id)
+    let scoreChange: number
+    let opposingScoreChange: number = 0
+
+    if (isSteal) {
+      if (isCorrect) {
+        scoreChange = Math.round(wager * multiplier)
+        opposingScoreChange = -wager
+      } else {
+        scoreChange = -Math.round(wager * 0.5)
+        opposingScoreChange = Math.round(wager * 1.5)
+      }
     } else {
-      db.prepare('UPDATE game_sessions SET team_b_score = team_b_score + ? WHERE id = ?').run(scoreChange, session.id)
+      scoreChange = isCorrect ? Math.round(wager * multiplier) : -Math.round(wager * 0.5)
     }
 
-    // Format the correct answer for display (birthday with month names)
+    db.transaction(() => {
+      if (isTeamA) {
+        db.prepare('UPDATE game_sessions SET team_a_score = team_a_score + ? WHERE id = ?').run(scoreChange, session.id)
+        if (opposingScoreChange !== 0) {
+          db.prepare('UPDATE game_sessions SET team_b_score = team_b_score + ? WHERE id = ?').run(opposingScoreChange, session.id)
+        }
+        if (isSteal) {
+          db.prepare('UPDATE game_sessions SET steal_used_a = 1 WHERE id = ?').run(session.id)
+        }
+      } else {
+        db.prepare('UPDATE game_sessions SET team_b_score = team_b_score + ? WHERE id = ?').run(scoreChange, session.id)
+        if (opposingScoreChange !== 0) {
+          db.prepare('UPDATE game_sessions SET team_a_score = team_a_score + ? WHERE id = ?').run(opposingScoreChange, session.id)
+        }
+        if (isSteal) {
+          db.prepare('UPDATE game_sessions SET steal_used_b = 1 WHERE id = ?').run(session.id)
+        }
+      }
+    })()
+
     let displayAnswer = correctOption?.text || ''
     if (!isReverseQuestion && questionId === 1) {
       displayAnswer = formatAnswerForDisplay(displayAnswer, questionId)
@@ -105,21 +109,24 @@ export async function POST(request: NextRequest) {
     currentState.last_result = {
       correct: isCorrect,
       score_change: scoreChange,
+      opposing_score_change: opposingScoreChange,
       correct_answer: displayAnswer,
       correct_option_id: correctOption?.id || '',
+      was_steal: isSteal,
     }
 
-    db.prepare(`
-      UPDATE game_sessions SET status = 'result', current_state = ? WHERE id = ?
-    `).run(JSON.stringify(currentState), session.id)
+    db.prepare('UPDATE game_sessions SET status = ?, current_state = ? WHERE id = ?')
+      .run('result', JSON.stringify(currentState), session.id)
 
     return NextResponse.json({
       correct: isCorrect,
       correct_answer: displayAnswer,
       correct_option_id: correctOption?.id || '',
       score_change: scoreChange,
+      opposing_score_change: opposingScoreChange,
       wager,
       multiplier,
+      was_steal: isSteal,
     })
   } catch (err) {
     console.error(err)
