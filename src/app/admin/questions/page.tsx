@@ -8,6 +8,7 @@ interface Question {
   id: number
   text: string
   personalized_template: string | null
+  reverse_template: string | null
   created_at: string
 }
 
@@ -16,9 +17,11 @@ export default function QuestionsPage() {
   const [answerCounts, setAnswerCounts] = useState<Map<number, number>>(new Map())
   const [newText, setNewText] = useState('')
   const [newTemplate, setNewTemplate] = useState('')
+  const [newReverse, setNewReverse] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
   const [editTemplate, setEditTemplate] = useState('')
+  const [editReverse, setEditReverse] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const router = useRouter()
@@ -55,11 +58,12 @@ export default function QuestionsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ text: newText.trim(), personalized_template: newTemplate.trim() || null }),
+        body: JSON.stringify({ text: newText.trim(), personalized_template: newTemplate.trim() || null, reverse_template: newReverse.trim() || null }),
       })
       if (res.ok) {
         setNewText('')
         setNewTemplate('')
+        setNewReverse('')
         fetchData()
       }
     } finally {
@@ -74,7 +78,7 @@ export default function QuestionsPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ text: editText.trim(), personalized_template: editTemplate.trim() || null }),
+        body: JSON.stringify({ text: editText.trim(), personalized_template: editTemplate.trim() || null, reverse_template: editReverse.trim() || null }),
       })
       if (res.ok) { setEditingId(null); fetchData() }
     } finally {
@@ -96,8 +100,9 @@ export default function QuestionsPage() {
           <h1 className="text-2xl font-bold text-white">إدارة الأسئلة</h1>
         </div>
 
-        <div className="bg-slate-700/40 border border-slate-600 rounded-xl p-4 mb-4 text-slate-400 text-sm">
-          استخدم <code className="text-yellow-400">{'{name}'}</code> في نموذج التخصيص ليتم استبداله باسم المتسابق. مثال: <span className="text-slate-300">"ما هي الوجبة المفضلة لـ{'{name}'}؟"</span>
+        <div className="bg-slate-700/40 border border-slate-600 rounded-xl p-4 mb-4 text-slate-400 text-sm space-y-1">
+          <div>استخدم <code className="text-yellow-400">{'{name}'}</code> في نموذج التخصيص ليتم استبداله باسم المتسابق.</div>
+          <div>استخدم <code className="text-orange-400">{'{answer}'}</code> في سؤال المراهنة العالية (أكثر من 500) ليتم استبداله بإجابة المتسابق. مثال: <span className="text-slate-300">"من وُلد في {'{answer}'}؟"</span></div>
         </div>
 
         <form onSubmit={handleAdd} className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
@@ -116,6 +121,13 @@ export default function QuestionsPage() {
               onChange={e => setNewTemplate(e.target.value)}
               placeholder={`نموذج التخصيص باستخدام {name} — مثال: ما هي الوجبة المفضلة لـ{'{name}'}؟`}
               className="w-full bg-slate-700 border border-violet-600/40 text-white rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-500 placeholder-slate-500 text-sm"
+            />
+            <input
+              type="text"
+              value={newReverse}
+              onChange={e => setNewReverse(e.target.value)}
+              placeholder={`سؤال المراهنة العالية (أكثر من 500) باستخدام {answer} — مثال: من وُلد في {'{answer}'}؟`}
+              className="w-full bg-slate-700 border border-orange-600/40 text-white rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-500 placeholder-slate-500 text-sm"
             />
           </div>
           <button
@@ -156,6 +168,13 @@ export default function QuestionsPage() {
                         placeholder={`نموذج مخصص باستخدام {name}`}
                         className="w-full bg-slate-700 border border-violet-600/40 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm placeholder-slate-500"
                       />
+                      <input
+                        type="text"
+                        value={editReverse}
+                        onChange={e => setEditReverse(e.target.value)}
+                        placeholder={`سؤال >500 باستخدام {answer}`}
+                        className="w-full bg-slate-700 border border-orange-600/40 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm placeholder-slate-500"
+                      />
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(q.id)} disabled={saving}
                           className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
@@ -175,13 +194,16 @@ export default function QuestionsPage() {
                         {q.personalized_template && (
                           <p className="text-violet-400 text-xs mt-1">📝 {q.personalized_template}</p>
                         )}
+                        {q.reverse_template && (
+                          <p className="text-orange-400 text-xs mt-1">🔄 &gt;500: {q.reverse_template}</p>
+                        )}
                         <p className="text-slate-500 text-xs mt-1">
                           {answerCounts.get(q.id) || 0} إجابة
                         </p>
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => { setEditingId(q.id); setEditText(q.text); setEditTemplate(q.personalized_template || '') }}
+                          onClick={() => { setEditingId(q.id); setEditText(q.text); setEditTemplate(q.personalized_template || ''); setEditReverse(q.reverse_template || '') }}
                           className="text-blue-400 hover:text-blue-300 text-sm px-3 py-1 rounded-lg hover:bg-blue-500/10 transition-colors"
                         >
                           تعديل

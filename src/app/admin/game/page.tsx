@@ -129,10 +129,12 @@ export default function GamePage() {
   const [currentQuestion, setCurrentQuestion] = useState<string>('')
   const [currentContestantName, setCurrentContestantName] = useState<string>('')
   const [scoreAnimation, setScoreAnimation] = useState<'up' | 'down' | null>(null)
+  const [coinParticles, setCoinParticles] = useState<Array<{ id: number; x: number; y: number; dx: number; dy: number; rot: number; emoji: string; duration: number }>>([])
   const [timeLeft, setTimeLeft] = useState(45)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const prevQuestionIdRef = useRef<number | undefined>(undefined)
+  const coinIdRef = useRef(0)
 
   const fetchState = useCallback(async () => {
     try {
@@ -197,6 +199,36 @@ export default function GamePage() {
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [session?.status, session?.current_state?.question_id])
+
+  function spawnCoins(type: 'gain' | 'loss' | 'helpline', team: string) {
+    const count = type === 'gain' ? 8 : type === 'loss' ? 5 : 3
+    const baseX = team === 'A' ? 100 : (typeof window !== 'undefined' ? window.innerWidth - 100 : 300)
+    const baseY = 60
+    const newCoins = Array.from({ length: count }, (_, i) => {
+      let angle: number
+      if (type === 'gain') {
+        angle = (-Math.PI * 0.9) + (i / (count - 1)) * (Math.PI * 0.8)
+      } else if (type === 'loss') {
+        angle = (Math.PI * 0.1) + (i / (count - 1)) * (Math.PI * 0.8)
+      } else {
+        angle = (Math.random() * Math.PI * 2)
+      }
+      const dist = 70 + Math.random() * 90
+      return {
+        id: ++coinIdRef.current,
+        x: baseX + (Math.random() - 0.5) * 40,
+        y: baseY + (Math.random() - 0.5) * 20,
+        dx: Math.cos(angle) * dist,
+        dy: Math.sin(angle) * dist,
+        rot: (Math.random() - 0.5) * 720,
+        emoji: type === 'gain' ? '🪙' : type === 'loss' ? '💸' : '🪙',
+        duration: 700 + Math.random() * 500,
+      }
+    })
+    setCoinParticles(prev => [...prev, ...newCoins])
+    const ids = newCoins.map(c => c.id)
+    setTimeout(() => setCoinParticles(prev => prev.filter(c => !ids.includes(c.id))), 1400)
+  }
 
   async function apiCall(url: string, body?: object) {
     setActionLoading(true)
@@ -265,10 +297,12 @@ export default function GamePage() {
 
   async function handleSubmitAnswer() {
     if (!selectedOption) return
+    const team = session?.current_team || 'A'
     const { ok, data } = await apiCall('/api/game/answer', { option_id: selectedOption })
     if (ok) {
       setScoreAnimation(data.correct ? 'up' : 'down')
       setTimeout(() => setScoreAnimation(null), 1500)
+      spawnCoins(data.correct ? 'gain' : 'loss', team)
     }
   }
 
@@ -288,8 +322,10 @@ export default function GamePage() {
   }
 
   async function handleHelpline(type: string) {
+    const team = session?.current_team || 'A'
     const { ok, data } = await apiCall('/api/game/helpline', { type })
     if (ok) {
+      spawnCoins('helpline', team)
       if (data.question_text) {
         setCurrentQuestion(data.question_text)
         setCurrentContestantName(data.contestant_name)
@@ -373,6 +409,23 @@ export default function GamePage() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#0f0a28] font-arabic text-white select-none">
+      {/* Coin Particles */}
+      {coinParticles.map(coin => (
+        <div
+          key={coin.id}
+          className="coin-particle"
+          style={{
+            left: coin.x,
+            top: coin.y,
+            '--coin-dx': `${coin.dx}px`,
+            '--coin-dy': `${coin.dy}px`,
+            '--coin-rot': `${coin.rot}deg`,
+            '--coin-duration': `${coin.duration}ms`,
+          } as React.CSSProperties}
+        >
+          {coin.emoji}
+        </div>
+      ))}
       {/* TOP BAR */}
       <div className="relative flex items-center justify-between px-4 py-3 bg-gradient-to-r from-[#1a0a3a] via-[#0d1a4a] to-[#1a0a3a] border-b border-yellow-500/30 shadow-lg">
         <div className={`flex items-center gap-3 ${session?.current_team === 'A' && session?.status !== 'idle' ? 'ring-2 ring-green-400 rounded-xl px-3 py-1' : 'px-3 py-1'}`}>

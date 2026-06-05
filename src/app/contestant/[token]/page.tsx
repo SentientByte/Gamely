@@ -77,38 +77,32 @@ export default function ContestantPage({ params }: { params: { token: string } }
     const errors: Record<number, string> = {}
 
     try {
-      const answersArray = Object.entries(answers)
-        .filter(([qid, v]) => {
-          // For question 1 (birth date), check date fields instead
-          if (parseInt(qid) === 1) {
-            return dateAnswers[parseInt(qid)]?.month && dateAnswers[parseInt(qid)]?.day
-          }
-          return v.trim() !== ''
-        })
-        .map(([question_id, answer]) => {
-          const qid = parseInt(question_id)
+      const answersArray = (data?.questions || [])
+        .map(q => {
+          const qid = q.id
 
-          // For question 1 (birth date), format as month/day
-          if (qid === 1 && dateAnswers[qid]) {
-            return {
-              question_id: qid,
-              answer: `${dateAnswers[qid].month}/${dateAnswers[qid].day}`,
+          // For question 1 (birth date), use dateAnswers state
+          if (qid === 1) {
+            const d = dateAnswers[qid]
+            if (d?.month && d?.day) {
+              return { question_id: qid, answer: `${d.month}/${d.day}` }
             }
+            return null
           }
+
+          const v = answers[qid] || ''
+          if (!v.trim()) return null
 
           // For question 3 (GPA), validate it's between 50-99
           if (qid === 3) {
-            const num = parseInt(answer.trim())
+            const num = parseInt(v.trim())
             if (isNaN(num) || num < 50 || num > 99) {
               errors[qid] = 'يجب أن يكون الرقم بين 50 و 99'
               return null
             }
           }
 
-          return {
-            question_id: qid,
-            answer: answer.trim(),
-          }
+          return { question_id: qid, answer: v.trim() }
         })
         .filter((item): item is { question_id: number; answer: string } => item !== null)
 
