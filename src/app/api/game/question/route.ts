@@ -49,7 +49,11 @@ function personalizeQuestion(template: string | null | undefined, questionText: 
   return questionText
 }
 
-function buildReverseQuestion(questionId: number, correctAnswer: string, questionText: string): string {
+function buildReverseQuestion(questionId: number, correctAnswer: string, questionText: string, dbReverseTemplate?: string | null): string {
+  if (dbReverseTemplate) {
+    const formatted = questionId === 1 ? formatBirthdayWithMonthName(correctAnswer) : correctAnswer
+    return dbReverseTemplate.replace('{answer}', formatted)
+  }
   const template = REVERSE_TEMPLATES[questionId]
   return template ? template(correctAnswer) : `من الإجابة الصحيحة هي ${correctAnswer}؟`
 }
@@ -125,15 +129,19 @@ export async function POST(request: NextRequest) {
     const usedQuestionIds = new Set(usedRows.map(r => r.question_id))
 
     // --- Custom player question (type: custom) ---
-    type CustomQ = { id: number; question_text: string; correct_answer: string; wrong_answer_1: string; wrong_answer_2: string; wrong_answer_3: string; wrong_answer_4: string }
+    type CustomQ = { id: number; question_text: string; correct_answer: string; wrong_answer_1: string; wrong_answer_2: string; wrong_answer_3: string; wrong_answer_4: string; min_wager: number; max_wager: number }
     const allCustom = db.prepare(`
       SELECT * FROM custom_player_questions WHERE contestant_id = ?
     `).all(contestant_id) as CustomQ[]
 
-    const availableCustom = allCustom.filter(q => !usedTopics.includes(`cq_${q.id}`))
+    const availableCustom = allCustom.filter(q =>
+      !usedTopics.includes(`cq_${q.id}`) &&
+      wager >= (q.min_wager ?? 0) &&
+      wager <= (q.max_wager ?? 1000)
+    )
 
     // --- Standard questions ---
-    const allQuestions = db.prepare('SELECT id, text, personalized_template FROM questions ORDER BY id ASC').all() as Array<{ id: number; text: string; personalized_template: string | null }>
+    const allQuestions = db.prepare('SELECT id, text, personalized_template, reverse_template FROM questions ORDER BY id ASC').all() as Array<{ id: number; text: string; personalized_template: string | null; reverse_template: string | null }>
 
     const answeredIds = new Set(
       (db.prepare('SELECT question_id FROM answers WHERE contestant_id = ?').all(contestant_id) as Array<{ question_id: number }>)
@@ -176,9 +184,11 @@ export async function POST(request: NextRequest) {
       let options: Array<{ id: string; text: string; is_correct: boolean }>
       let isReverseQuestion = false
 
+      const selectedQuestionFull = db.prepare('SELECT id, text, personalized_template, reverse_template FROM questions WHERE id = ?').get(selectedQuestion.id) as { id: number; text: string; personalized_template: string | null; reverse_template: string | null } | undefined
+
       if (wager > 499) {
         isReverseQuestion = true
-        questionText = buildReverseQuestion(selectedQuestion.id, correctAnswer, selectedQuestion.text)
+        questionText = buildReverseQuestion(selectedQuestion.id, correctAnswer, selectedQuestion.text, selectedQuestionFull?.reverse_template)
         const allContestants = db.prepare('SELECT id, name FROM contestants ORDER BY id ASC').all() as Array<{ id: number; name: string }>
         const wrongNames = allContestants.filter(c => c.id !== contestant_id).map(c => c.name).slice(0, 4)
         const allOptions = shuffle([{ text: contestant.name, is_correct: true }, ...wrongNames.map(t => ({ text: t, is_correct: false }))])
@@ -255,7 +265,7 @@ export async function POST(request: NextRequest) {
 
     if (wager > 499) {
       isReverseQuestion = true
-      questionText = buildReverseQuestion(selectedQuestion.id, correctAnswer, selectedQuestion.text)
+      questionText = buildReverseQuestion(selectedQuestion.id, correctAnswer, selectedQuestion.text, (selectedQuestion as { reverse_template?: string | null }).reverse_template)
       const allContestants = db.prepare('SELECT id, name FROM contestants ORDER BY id ASC').all() as Array<{ id: number; name: string }>
       if (allContestants.length < 2) return NextResponse.json({ error: 'Not enough contestants for reverse question' }, { status: 400 })
       const wrongNames = allContestants.filter(c => c.id !== contestant_id).map(c => c.name).slice(0, 4)

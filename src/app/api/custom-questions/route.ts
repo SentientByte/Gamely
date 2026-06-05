@@ -20,14 +20,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { contestant_id, question_text, correct_answer, wrong_answer_1, wrong_answer_2, wrong_answer_3, wrong_answer_4 } = body
+    const { contestant_id, question_text, correct_answer, wrong_answer_1, wrong_answer_2, wrong_answer_3, wrong_answer_4, min_wager, max_wager } = body
     if (!contestant_id || !question_text || !correct_answer || !wrong_answer_1 || !wrong_answer_2 || !wrong_answer_3 || !wrong_answer_4) {
       return NextResponse.json({ error: 'All fields required' }, { status: 400 })
     }
     const result = db.prepare(`
-      INSERT INTO custom_player_questions (contestant_id, question_text, correct_answer, wrong_answer_1, wrong_answer_2, wrong_answer_3, wrong_answer_4)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(contestant_id, question_text, correct_answer, wrong_answer_1, wrong_answer_2, wrong_answer_3, wrong_answer_4)
+      INSERT INTO custom_player_questions (contestant_id, question_text, correct_answer, wrong_answer_1, wrong_answer_2, wrong_answer_3, wrong_answer_4, min_wager, max_wager)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(contestant_id, question_text, correct_answer, wrong_answer_1, wrong_answer_2, wrong_answer_3, wrong_answer_4, min_wager ?? 0, max_wager ?? 1000)
     return NextResponse.json({ id: result.lastInsertRowid })
   } catch (err) {
     console.error(err)
