@@ -26,7 +26,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
 
-    const helplineKeys = ['helpline_remove_two', 'helpline_same_person', 'helpline_opposing_team', 'helpline_wild']
+    const helplineKeys = ['helpline_remove_two', 'helpline_same_person', 'helpline_opposing_team']
+    const pctKeys = [
+      'steal_correct_opponent_loss_pct',
+      'steal_wrong_self_pct',
+      'steal_wrong_opponent_pct',
+      'wild_correct_bonus_pct',
+      'wild_wrong_opponent_pct',
+    ]
+    const intKeys = [
+      'timer_duration',
+      'steal_max_wager',
+      'wild_max_wager',
+      'default_start_score',
+    ]
     db.transaction(() => {
       for (const key of helplineKeys) {
         if (body[key] !== undefined) {
@@ -35,8 +48,15 @@ export async function POST(request: NextRequest) {
           upsert.run(key, JSON.stringify({ cost: val.cost, multiplier_reduction: val.multiplier_reduction }))
         }
       }
-      if (body.timer_duration !== undefined && typeof body.timer_duration === 'number' && body.timer_duration >= 10) {
-        upsert.run('timer_duration', JSON.stringify(body.timer_duration))
+      for (const key of pctKeys) {
+        if (body[key] !== undefined && typeof body[key] === 'number' && body[key] >= 0) {
+          upsert.run(key, JSON.stringify(body[key]))
+        }
+      }
+      for (const key of intKeys) {
+        if (body[key] !== undefined && typeof body[key] === 'number' && body[key] >= 0) {
+          upsert.run(key, JSON.stringify(body[key]))
+        }
       }
     })()
 
