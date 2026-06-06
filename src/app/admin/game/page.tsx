@@ -21,6 +21,7 @@ interface GameState {
   helplines_used?: string[]
   selected_option?: string | null
   is_steal?: boolean
+  is_wild?: boolean
   last_result?: {
     correct: boolean
     score_change: number
@@ -28,6 +29,7 @@ interface GameState {
     correct_answer: string
     correct_option_id: string
     was_steal?: boolean
+    was_wild?: boolean
   } | null
 }
 
@@ -44,6 +46,8 @@ interface Session {
   wager_usage: string
   steal_used_a: number
   steal_used_b: number
+  wild_used_a: number
+  wild_used_b: number
 }
 
 interface Contestant {
@@ -61,8 +65,12 @@ interface Settings {
   helpline_remove_two: HelplineSetting
   helpline_same_person: HelplineSetting
   helpline_opposing_team: HelplineSetting
-  helpline_wild: HelplineSetting
   timer_duration?: number
+  steal_max_wager?: number
+  wild_max_wager?: number
+  wild_correct_bonus_pct?: number
+  wild_wrong_opponent_pct?: number
+  default_start_score?: number
 }
 
 const LABELS_AR = ['أ', 'ب', 'ج', 'د', 'هـ']
@@ -72,8 +80,12 @@ const DEFAULT_SETTINGS: Settings = {
   helpline_remove_two: { cost: 50, multiplier_reduction: 0.25 },
   helpline_same_person: { cost: 100, multiplier_reduction: 0.5 },
   helpline_opposing_team: { cost: 75, multiplier_reduction: 0.5 },
-  helpline_wild: { cost: 200, multiplier_reduction: 0.5 },
   timer_duration: 45,
+  steal_max_wager: 500,
+  wild_max_wager: 500,
+  wild_correct_bonus_pct: 0.5,
+  wild_wrong_opponent_pct: 0.5,
+  default_start_score: 1000,
 }
 
 function playRingSound() {
@@ -144,6 +156,7 @@ export default function GamePage() {
   const [selectedWager, setSelectedWager] = useState<number>(100)
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [stealMode, setStealMode] = useState(false)
+  const [wildMode, setWildMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [startScoreA, setStartScoreA] = useState(0)
@@ -185,7 +198,12 @@ export default function GamePage() {
       const res = await fetch('/api/settings', { credentials: 'include' })
       if (res.ok) {
         const data = await res.json()
-        setSettings({ ...DEFAULT_SETTINGS, ...data })
+        const merged = { ...DEFAULT_SETTINGS, ...data }
+        setSettings(merged)
+        if (merged.default_start_score !== undefined) {
+          setStartScoreA(merged.default_start_score)
+          setStartScoreB(merged.default_start_score)
+        }
       }
     } catch { /* ignore */ }
   }, [])
@@ -288,6 +306,7 @@ export default function GamePage() {
       setSelectedOption(null)
       setSelectedWager(100)
       setStealMode(false)
+      setWildMode(false)
     } else {
       alert(data.error || 'حدث خطأ')
     }
@@ -301,6 +320,7 @@ export default function GamePage() {
     setCurrentQuestion('')
     setCurrentContestantName('')
     setStealMode(false)
+    setWildMode(false)
   }
 
   async function handleStartQuestion() {
@@ -314,6 +334,7 @@ export default function GamePage() {
       contestant_id: parseInt(contestantId),
       wager: selectedWager,
       is_steal: stealMode,
+      is_wild: wildMode,
     })
     if (ok) {
       setCurrentQuestion(data.question_text)
@@ -343,6 +364,7 @@ export default function GamePage() {
     setSelectedContestant('')
     setSelectedWager(100)
     setStealMode(false)
+    setWildMode(false)
   }
 
   async function handleFinish() {
@@ -430,7 +452,11 @@ export default function GamePage() {
   const incorrectPoints = Math.round(wager * 0.5)
   const currentTeam = session?.current_team || 'A'
   const stealUsed = currentTeam === 'A' ? (session?.steal_used_a || 0) : (session?.steal_used_b || 0)
-  const canSteal = !stealUsed && selectedWager <= 500
+  const stealMaxWager = settings.steal_max_wager ?? 500
+  const canSteal = !stealUsed && selectedWager <= stealMaxWager && !wildMode
+  const wildUsed = currentTeam === 'A' ? (session?.wild_used_a || 0) : (session?.wild_used_b || 0)
+  const wildMaxWager = settings.wild_max_wager ?? 500
+  const canWild = !wildUsed && selectedWager <= wildMaxWager && !stealMode
 
   // Timer color
   const timerColor = timeLeft > 20 ? 'text-green-400' : timeLeft > 10 ? 'text-yellow-400' : 'text-red-400'
@@ -625,17 +651,17 @@ export default function GamePage() {
               </div>
 
               {/* Steal option */}
-              <div className={`mb-4 rounded-xl border p-3 transition-all ${stealMode ? 'bg-orange-900/40 border-orange-500/70' : 'bg-slate-700/40 border-slate-600/50'}`}>
+              <div className={`mb-2 rounded-xl border p-3 transition-all ${stealMode ? 'bg-orange-900/40 border-orange-500/70' : 'bg-slate-700/40 border-slate-600/50'}`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-bold text-orange-300">⚔️ وضع السرقة</div>
                     <div className="text-xs text-slate-400 mt-0.5">
-                      صح: تسرق النقاط من الفريق المنافس • خطأ: يحصل المنافس على 1.5× النقاط
-                      {!canSteal && stealUsed ? ' (مستخدم)' : !canSteal ? ' (متاح للمراهنات ≤500 فقط)' : ''}
+                      صح: تربح + المنافس يخسر نقاطاً • خطأ: المنافس يكسب نقاطاً إضافية
+                      {!canSteal && stealUsed ? ' (مستخدم)' : !canSteal && wildMode ? ' (لا يمكن مع الشخصية الخاصة)' : !canSteal ? ` (متاح للمراهنات ≤${stealMaxWager} فقط)` : ''}
                     </div>
                   </div>
                   <button
-                    onClick={() => canSteal && setStealMode(s => !s)}
+                    onClick={() => { if (canSteal) { setStealMode(s => !s); setWildMode(false) } }}
                     disabled={!canSteal}
                     className={`w-14 h-7 rounded-full transition-all relative ${
                       stealMode ? 'bg-orange-500' : 'bg-slate-600'
@@ -646,9 +672,31 @@ export default function GamePage() {
                 </div>
               </div>
 
+              {/* Wild option */}
+              <div className={`mb-4 rounded-xl border p-3 transition-all ${wildMode ? 'bg-amber-900/40 border-amber-500/70' : 'bg-slate-700/40 border-slate-600/50'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-amber-300">👶 وضع الشخصية الخاصة</div>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      صح: المراهنة +{Math.round((settings.wild_correct_bonus_pct ?? 0.5) * 100)}% إضافية • خطأ: تخسر المراهنة + المنافس يكسب {Math.round((settings.wild_wrong_opponent_pct ?? 0.5) * 100)}%
+                      {!canWild && wildUsed ? ' (مستخدم)' : !canWild && stealMode ? ' (لا يمكن مع السرقة)' : !canWild ? ` (متاح للمراهنات ≤${wildMaxWager} فقط)` : ''}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { if (canWild) { setWildMode(w => !w); setStealMode(false) } }}
+                    disabled={!canWild}
+                    className={`w-14 h-7 rounded-full transition-all relative ${
+                      wildMode ? 'bg-amber-500' : 'bg-slate-600'
+                    } ${!canWild ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                  >
+                    <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${wildMode ? 'right-0.5' : 'left-0.5'}`} />
+                  </button>
+                </div>
+              </div>
+
               <button onClick={handleStartQuestion} disabled={actionLoading}
-                className={`w-full font-bold py-4 rounded-xl transition-colors text-xl ${stealMode ? 'bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white'}`}>
-                {stealMode ? '⚔️ ابدأ السؤال بالسرقة' : 'ابدأ السؤال ▶'} ({selectedWager} نقطة)
+                className={`w-full font-bold py-4 rounded-xl transition-colors text-xl ${stealMode ? 'bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white' : wildMode ? 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white'}`}>
+                {stealMode ? '⚔️ ابدأ السؤال بالسرقة' : wildMode ? '👶 ابدأ سؤال الشخصية الخاصة' : 'ابدأ السؤال ▶'} ({selectedWager} نقطة)
               </button>
             </div>
           </div>
@@ -665,6 +713,9 @@ export default function GamePage() {
                   </div>
                   {st?.is_steal && (
                     <span className="text-xs bg-orange-900/50 text-orange-300 border border-orange-600/50 px-2 py-0.5 rounded-full">⚔️ سرقة</span>
+                  )}
+                  {st?.is_wild && (
+                    <span className="text-xs bg-amber-900/50 text-amber-300 border border-amber-600/50 px-2 py-0.5 rounded-full">👶 شخصية خاصة</span>
                   )}
                 </div>
 
@@ -695,6 +746,11 @@ export default function GamePage() {
                 {st?.is_steal && (
                   <div className="flex items-center gap-1.5 bg-orange-900/30 border border-orange-600/40 rounded-lg px-3 py-1.5 text-sm">
                     <span className="text-orange-300 text-xs">⚔️ سرقة نشطة</span>
+                  </div>
+                )}
+                {st?.is_wild && (
+                  <div className="flex items-center gap-1.5 bg-amber-900/30 border border-amber-600/40 rounded-lg px-3 py-1.5 text-sm">
+                    <span className="text-amber-300 text-xs">👶 شخصية خاصة</span>
                   </div>
                 )}
               </div>
@@ -737,37 +793,31 @@ export default function GamePage() {
               <div className="space-y-2">
                 <h3 className="text-yellow-400 font-bold text-sm text-center mb-2">المساعدات (واحدة فقط)</h3>
 
-                {st?.is_steal && (
+                {(st?.is_steal || st?.is_wild) && (
                   <div className="text-center text-orange-400 text-xs bg-orange-900/30 border border-orange-700/50 rounded-lg p-2 mb-2">
-                    ⚔️ المساعدات غير متاحة في وضع السرقة
+                    {st?.is_steal ? '⚔️' : '👶'} المساعدات غير متاحة في هذا الوضع
                   </div>
                 )}
 
-                <button onClick={() => handleHelpline('same_person')} disabled={actionLoading || helplineUsed || !!st?.is_steal}
-                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-purple-600/50 bg-purple-900/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500'}`}>
+                <button onClick={() => handleHelpline('same_person')} disabled={actionLoading || helplineUsed || !!st?.is_steal || !!st?.is_wild}
+                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal || st?.is_wild) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-purple-600/50 bg-purple-900/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500'}`}>
                   <div className="font-bold">🔄 تبديل السؤال</div>
                   <div className="text-xs opacity-70 mt-0.5">نفس المتسابق • {settings.helpline_same_person.cost} نقطة • ↓{Math.round(settings.helpline_same_person.multiplier_reduction * 100)}%</div>
                 </button>
 
-                <button onClick={() => handleHelpline('opposing_team')} disabled={actionLoading || helplineUsed || !!st?.is_steal}
-                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-cyan-600/50 bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50 hover:border-cyan-500'}`}>
+                <button onClick={() => handleHelpline('opposing_team')} disabled={actionLoading || helplineUsed || !!st?.is_steal || !!st?.is_wild}
+                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal || st?.is_wild) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-cyan-600/50 bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50 hover:border-cyan-500'}`}>
                   <div className="font-bold">🎲 متسابق مختلف</div>
                   <div className="text-xs opacity-70 mt-0.5">{settings.helpline_opposing_team.cost} نقطة • ↓{Math.round(settings.helpline_opposing_team.multiplier_reduction * 100)}%</div>
                 </button>
 
-                <button onClick={() => handleHelpline('wild')} disabled={actionLoading || helplineUsed || !!st?.is_steal}
-                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-amber-600/50 bg-amber-900/30 text-amber-300 hover:bg-amber-900/50 hover:border-amber-500'}`}>
-                  <div className="font-bold">👶 سؤال عن الشخصية الخاصة</div>
-                  <div className="text-xs opacity-70 mt-0.5">{settings.helpline_wild.cost} نقطة • ↓{Math.round(settings.helpline_wild.multiplier_reduction * 100)}%</div>
-                </button>
-
-                <button onClick={() => handleHelpline('remove_two')} disabled={actionLoading || helplineUsed || !!st?.is_steal}
-                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-red-600/50 bg-red-900/30 text-red-300 hover:bg-red-900/50 hover:border-red-500'}`}>
+                <button onClick={() => handleHelpline('remove_two')} disabled={actionLoading || helplineUsed || !!st?.is_steal || !!st?.is_wild}
+                  className={`w-full p-3 rounded-xl border text-sm text-right transition-all ${(helplineUsed || st?.is_steal || st?.is_wild) ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-red-600/50 bg-red-900/30 text-red-300 hover:bg-red-900/50 hover:border-red-500'}`}>
                   <div className="font-bold">✂️ حذف إجابتين خاطئتين</div>
                   <div className="text-xs opacity-70 mt-0.5">{settings.helpline_remove_two.cost} نقطة • ↓{Math.round(settings.helpline_remove_two.multiplier_reduction * 100)}%</div>
                 </button>
 
-                {helplineUsed && !st?.is_steal && <div className="text-center text-slate-500 text-xs mt-1">تم استخدام المساعدة لهذا السؤال</div>}
+                {helplineUsed && !st?.is_steal && !st?.is_wild && <div className="text-center text-slate-500 text-xs mt-1">تم استخدام المساعدة لهذا السؤال</div>}
               </div>
             </div>
           </div>
@@ -783,6 +833,11 @@ export default function GamePage() {
               {st.last_result.was_steal && (
                 <div className="mb-3 bg-orange-900/40 border border-orange-600/50 rounded-xl px-4 py-2 text-orange-300 text-sm">
                   ⚔️ وضع السرقة {st.last_result.correct ? `— سُرقت ${Math.abs(st.last_result.opposing_score_change || 0)} نقطة من المنافس` : `— حصل المنافس على ${st.last_result.opposing_score_change || 0} نقطة`}
+                </div>
+              )}
+              {st.last_result.was_wild && (
+                <div className="mb-3 bg-amber-900/40 border border-amber-600/50 rounded-xl px-4 py-2 text-amber-300 text-sm">
+                  👶 وضع الشخصية الخاصة {st.last_result.correct ? `— مكافأة إضافية!` : `— حصل المنافس على ${st.last_result.opposing_score_change || 0} نقطة`}
                 </div>
               )}
 

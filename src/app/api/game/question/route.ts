@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { contestant_id, question_id, wager: bodyWager, is_steal } = body
+    const { contestant_id, question_id, wager: bodyWager, is_steal, is_wild } = body
 
     if (!contestant_id) {
       return NextResponse.json({ error: 'contestant_id is required' }, { status: 400 })
@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
     const session = db.prepare('SELECT * FROM game_sessions ORDER BY id DESC LIMIT 1').get() as {
       id: number; status: string; current_team: string; current_state: string; last_question_id: number | null
       wager_usage: string; steal_used_a: number; steal_used_b: number; used_question_topics: string
+      wild_used_a: number; wild_used_b: number
     } | undefined
 
     if (!session) {
@@ -111,13 +112,63 @@ export async function POST(request: NextRequest) {
 
     // Validate steal
     const stealUsed = session.current_team === 'A' ? session.steal_used_a : session.steal_used_b
-    const isSteal = !!is_steal && wager <= 500 && !stealUsed
+    const stealMaxWagerRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('steal_max_wager') as { value: string } | undefined
+    const stealMaxWager = stealMaxWagerRow ? JSON.parse(stealMaxWagerRow.value) : 500
+    const isSteal = !!is_steal && wager <= stealMaxWager && !stealUsed
+
+    // Validate wild
+    const wildUsed = session.current_team === 'A' ? session.wild_used_a : session.wild_used_b
+    const wildMaxWagerRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('wild_max_wager') as { value: string } | undefined
+    const wildMaxWager = wildMaxWagerRow ? JSON.parse(wildMaxWagerRow.value) : 500
+    const isWild = !!is_wild && !is_steal && wager <= wildMaxWager && !wildUsed
 
     // Update wager usage
     if (!wagerUsage[session.current_team]) wagerUsage[session.current_team] = {}
     wagerUsage[session.current_team][wagerKey] = currentCount + 1
 
-    const updatedState = { ...currentState, wager, reward_multiplier: rewardMultiplier, helplines_used, is_steal: isSteal }
+    const updatedState = { ...currentState, wager, reward_multiplier: rewardMultiplier, helplines_used, is_steal: isSteal, is_wild: isWild }
+
+    // Wild mode: use wild question
+    if (isWild) {
+      const OPTION_LABELS_WILD = ['أ', 'ب', 'ج', 'د', 'هـ']
+      const wildQ = db.prepare('SELECT * FROM wild_questions ORDER BY RANDOM() LIMIT 1').get() as {
+        id: number; question_text: string; correct_answer: string;
+        wrong_answer_1: string; wrong_answer_2: string; wrong_answer_3: string; wrong_answer_4: string
+      } | undefined
+      if (!wildQ) return NextResponse.json({ error: 'لا توجد أسئلة للشخصية الخاصة. أضف أسئلة من لوحة التحكم.' }, { status: 400 })
+
+      const allOpts = shuffle([
+        { text: wildQ.correct_answer, is_correct: true },
+        { text: wildQ.wrong_answer_1, is_correct: false },
+        { text: wildQ.wrong_answer_2, is_correct: false },
+        { text: wildQ.wrong_answer_3, is_correct: false },
+        { text: wildQ.wrong_answer_4, is_correct: false },
+      ])
+      const options = allOpts.map((opt, i) => ({ id: OPTION_LABELS_WILD[i], text: opt.text, is_correct: opt.is_correct }))
+
+      const newState = {
+        ...updatedState,
+        contestant_id,
+        contestant_name: contestant.name,
+        question_id: null,
+        question_text: wildQ.question_text,
+        wager,
+        reward_multiplier: rewardMultiplier,
+        options,
+        eliminated_options: [],
+        helplines_used,
+        selected_option: null,
+        last_result: null,
+        is_reverse_question: false,
+        is_custom_question: false,
+        is_wild: true,
+      }
+
+      db.prepare('UPDATE game_sessions SET status = ?, current_state = ?, wager_usage = ? WHERE id = ?')
+        .run('questioning', JSON.stringify(newState), JSON.stringify(wagerUsage), session.id)
+
+      return NextResponse.json({ question_text: wildQ.question_text, options, contestant_name: contestant.name, contestant_id: contestant.id, question_id: null, wager, reward_multiplier: rewardMultiplier })
+    }
 
     // Track globally used question topics for this session
     const usedTopics: string[] = JSON.parse(session.used_question_topics || '[]')

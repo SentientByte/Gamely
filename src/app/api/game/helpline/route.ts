@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { type } = body
 
-    if (!['same_person', 'opposing_team', 'wild', 'remove_two'].includes(type)) {
+    if (!['same_person', 'opposing_team', 'remove_two'].includes(type)) {
       return NextResponse.json({ error: 'Invalid helpline type' }, { status: 400 })
     }
 
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'يمكن استخدام مساعدة واحدة فقط في كل سؤال' }, { status: 400 })
     }
 
-    const settingKey = `helpline_${type === 'remove_two' ? 'remove_two' : type === 'same_person' ? 'same_person' : type === 'opposing_team' ? 'opposing_team' : 'wild'}`
+    const settingKey = `helpline_${type === 'remove_two' ? 'remove_two' : type === 'same_person' ? 'same_person' : 'opposing_team'}`
     const setting = getHelplineSetting(settingKey)
     const costPoints = setting.cost
     const multiplierReduction = setting.multiplier_reduction
@@ -203,7 +203,6 @@ export async function POST(request: NextRequest) {
     // Question-changing helplines
     let targetContestantId: number
     let newQuestionId: number | null = null
-    let wildQuestionData: { question_text: string; options: Array<{ id: string; text: string; is_correct: boolean }> } | null = null
 
     if (type === 'same_person') {
       targetContestantId = currentState.contestant_id
@@ -269,28 +268,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'لا توجد إجابات من الفريق المنافس' }, { status: 400 })
       }
 
-    } else if (type === 'wild') {
-      // Use wild_questions table
-      const wildQs = db.prepare('SELECT * FROM wild_questions ORDER BY RANDOM() LIMIT 1').get() as {
-        id: number; question_text: string; correct_answer: string;
-        wrong_answer_1: string; wrong_answer_2: string; wrong_answer_3: string; wrong_answer_4: string
-      } | undefined
-
-      if (!wildQs) {
-        return NextResponse.json({ error: 'لا توجد أسئلة للشخصية الخاصة. أضف أسئلة من لوحة التحكم.' }, { status: 400 })
-      }
-
-      const allOptions = shuffle([
-        { text: wildQs.correct_answer, is_correct: true },
-        { text: wildQs.wrong_answer_1, is_correct: false },
-        { text: wildQs.wrong_answer_2, is_correct: false },
-        { text: wildQs.wrong_answer_3, is_correct: false },
-        { text: wildQs.wrong_answer_4, is_correct: false },
-      ])
-      const options = allOptions.map((opt, i) => ({ id: OPTION_LABELS[i], text: opt.text, is_correct: opt.is_correct }))
-
-      wildQuestionData = { question_text: wildQs.question_text, options }
-      targetContestantId = currentState.contestant_id // keep same for state, but question is custom
     } else {
       return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
     }
@@ -303,33 +280,6 @@ export async function POST(request: NextRequest) {
     }
 
     const newHelplines = [...helplines_used, type]
-
-    if (type === 'wild' && wildQuestionData) {
-      newState = {
-        contestant_id: targetContestantId!,
-        contestant_name: currentState.contestant_name,
-        question_id: null,
-        question_text: wildQuestionData.question_text,
-        wager: currentState.wager,
-        reward_multiplier: newMultiplier,
-        options: wildQuestionData.options,
-        eliminated_options: [],
-        helplines_used: newHelplines,
-        selected_option: null,
-        last_result: null,
-        is_wild_question: true,
-      }
-
-      db.prepare('UPDATE game_sessions SET current_state = ? WHERE id = ?').run(JSON.stringify(newState), session.id)
-
-      return NextResponse.json({
-        success: true,
-        question_text: wildQuestionData.question_text,
-        contestant_name: currentState.contestant_name,
-        options: wildQuestionData.options,
-        reward_multiplier: newMultiplier,
-      })
-    }
 
     // Build new question for same_person and opposing_team
     const contestant = db.prepare('SELECT id, name FROM contestants WHERE id = ?').get(targetContestantId!) as { id: number; name: string }

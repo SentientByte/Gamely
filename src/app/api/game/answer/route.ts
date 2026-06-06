@@ -55,6 +55,17 @@ export async function POST(request: NextRequest) {
     const questionId: number = currentState.question_id || 0
     const isReverseQuestion: boolean = currentState.is_reverse_question || false
     const isSteal: boolean = currentState.is_steal || false
+    const isWild: boolean = currentState.is_wild || false
+
+    function getSetting(key: string, def: number): number {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+      return row ? JSON.parse(row.value) : def
+    }
+    const stealCorrectOpponentLoss = getSetting('steal_correct_opponent_loss_pct', 1.0)
+    const stealWrongSelf = getSetting('steal_wrong_self_pct', 0.5)
+    const stealWrongOpponent = getSetting('steal_wrong_opponent_pct', 1.5)
+    const wildCorrectBonus = getSetting('wild_correct_bonus_pct', 0.5)
+    const wildWrongOpponent = getSetting('wild_wrong_opponent_pct', 0.5)
 
     const selectedOption = options.find(o => o.id === option_id)
     if (!selectedOption) {
@@ -71,10 +82,18 @@ export async function POST(request: NextRequest) {
     if (isSteal) {
       if (isCorrect) {
         scoreChange = Math.round(wager * multiplier)
-        opposingScoreChange = -wager
+        opposingScoreChange = -Math.round(wager * stealCorrectOpponentLoss)
       } else {
-        scoreChange = -Math.round(wager * 0.5)
-        opposingScoreChange = Math.round(wager * 1.5)
+        scoreChange = -Math.round(wager * stealWrongSelf)
+        opposingScoreChange = Math.round(wager * stealWrongOpponent)
+      }
+    } else if (isWild) {
+      if (isCorrect) {
+        scoreChange = Math.round(wager * (1 + wildCorrectBonus))
+        opposingScoreChange = 0
+      } else {
+        scoreChange = -wager
+        opposingScoreChange = Math.round(wager * wildWrongOpponent)
       }
     } else {
       scoreChange = isCorrect ? Math.round(wager * multiplier) : -Math.round(wager * 0.5)
@@ -86,17 +105,15 @@ export async function POST(request: NextRequest) {
         if (opposingScoreChange !== 0) {
           db.prepare('UPDATE game_sessions SET team_b_score = team_b_score + ? WHERE id = ?').run(opposingScoreChange, session.id)
         }
-        if (isSteal) {
-          db.prepare('UPDATE game_sessions SET steal_used_a = 1 WHERE id = ?').run(session.id)
-        }
+        if (isSteal) db.prepare('UPDATE game_sessions SET steal_used_a = 1 WHERE id = ?').run(session.id)
+        if (isWild) db.prepare('UPDATE game_sessions SET wild_used_a = 1 WHERE id = ?').run(session.id)
       } else {
         db.prepare('UPDATE game_sessions SET team_b_score = team_b_score + ? WHERE id = ?').run(scoreChange, session.id)
         if (opposingScoreChange !== 0) {
           db.prepare('UPDATE game_sessions SET team_a_score = team_a_score + ? WHERE id = ?').run(opposingScoreChange, session.id)
         }
-        if (isSteal) {
-          db.prepare('UPDATE game_sessions SET steal_used_b = 1 WHERE id = ?').run(session.id)
-        }
+        if (isSteal) db.prepare('UPDATE game_sessions SET steal_used_b = 1 WHERE id = ?').run(session.id)
+        if (isWild) db.prepare('UPDATE game_sessions SET wild_used_b = 1 WHERE id = ?').run(session.id)
       }
     })()
 
@@ -113,6 +130,7 @@ export async function POST(request: NextRequest) {
       correct_answer: displayAnswer,
       correct_option_id: correctOption?.id || '',
       was_steal: isSteal,
+      was_wild: isWild,
     }
 
     db.prepare('UPDATE game_sessions SET status = ?, current_state = ? WHERE id = ?')
