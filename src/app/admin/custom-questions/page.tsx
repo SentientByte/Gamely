@@ -11,7 +11,7 @@ interface CustomQuestion {
   wrong_answer_1: string; wrong_answer_2: string; wrong_answer_3: string; wrong_answer_4: string
   min_wager: number; max_wager: number
 }
-interface Question { id: number; text: string }
+interface Question { id: number; text: string; min_wager?: number; max_wager?: number }
 interface Answer { id: number; contestant_id: number; question_id: number; answer: string }
 interface WrongAnswer { id: number; contestant_id: number; question_id: number; wrong_answer: string }
 interface EditingCorrect { contestant_id: number; question_id: number; answer_id: number | null; value: string }
@@ -35,6 +35,7 @@ export default function CombinedQuestionsPage() {
   const [filterQuestion, setFilterQuestion] = useState('')
   const [editingCorrect, setEditingCorrect] = useState<EditingCorrect | null>(null)
   const [addingWrong, setAddingWrong] = useState<AddingWrong | null>(null)
+  const [editingWager, setEditingWager] = useState<{ question_id: number; min_wager: number; max_wager: number } | null>(null)
   const router = useRouter()
 
   useEffect(() => { fetchAll() }, [])
@@ -119,6 +120,17 @@ export default function CombinedQuestionsPage() {
     if (!aw.value.trim() || !aw.contestant_id) { setAddingWrong(null); return }
     await fetch('/api/custom-wrong-answers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ contestant_id: aw.contestant_id, question_id: aw.question_id, wrong_answer: aw.value }) })
     setAddingWrong(null)
+    await fetchAll()
+  }
+
+  async function handleSaveQuestionWager(question_id: number, min_wager: number, max_wager: number) {
+    await fetch(`/api/questions/${question_id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ min_wager, max_wager }),
+    })
+    setEditingWager(null)
     await fetchAll()
   }
 
@@ -302,7 +314,7 @@ export default function CombinedQuestionsPage() {
                   const qWrongs = wrongAnswers.filter(w => w.question_id === q.id)
                   return (
                     <div key={q.id} className="bg-slate-800/60 border border-slate-700 rounded-2xl p-5">
-                      <div className="flex items-start justify-between gap-3 mb-4">
+                      <div className="flex items-start justify-between gap-3 mb-3">
                         <div className="flex-1">
                           <span className="text-slate-500 text-xs ml-2">#{q.id}</span>
                           <span className="text-white font-medium text-lg">{q.text}</span>
@@ -312,6 +324,41 @@ export default function CombinedQuestionsPage() {
                           حذف السؤال
                         </button>
                       </div>
+
+                      {/* Wager range for this question */}
+                      {editingWager?.question_id === q.id ? (
+                        <div className="bg-slate-700/40 border border-orange-700/40 rounded-xl p-3 mb-4 flex items-center gap-3 flex-wrap">
+                          <span className="text-orange-300 text-xs font-medium">🎯 نطاق المراهنة:</span>
+                          <div className="flex items-center gap-2">
+                            <label className="text-slate-400 text-xs">من</label>
+                            <select value={editingWager.min_wager}
+                              onChange={e => setEditingWager(w => w ? { ...w, min_wager: parseInt(e.target.value) } : null)}
+                              className="bg-slate-600 border border-slate-500 text-white rounded px-2 py-1 text-xs focus:outline-none">
+                              {WAGER_OPTIONS.map(w => <option key={w} value={w}>{w === 0 ? '0 (بدون حد)' : `${w}`}</option>)}
+                            </select>
+                            <label className="text-slate-400 text-xs">إلى</label>
+                            <select value={editingWager.max_wager}
+                              onChange={e => setEditingWager(w => w ? { ...w, max_wager: parseInt(e.target.value) } : null)}
+                              className="bg-slate-600 border border-slate-500 text-white rounded px-2 py-1 text-xs focus:outline-none">
+                              {WAGER_OPTIONS.filter(w => w > 0).map(w => <option key={w} value={w}>{w === 1000 ? '1000 (بدون حد)' : `${w}`}</option>)}
+                            </select>
+                          </div>
+                          <button onClick={() => handleSaveQuestionWager(q.id, editingWager.min_wager, editingWager.max_wager)}
+                            className="text-xs bg-orange-600 hover:bg-orange-500 text-white rounded px-3 py-1">حفظ</button>
+                          <button onClick={() => setEditingWager(null)}
+                            className="text-xs bg-slate-600 text-slate-300 rounded px-3 py-1">إلغاء</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 mb-4">
+                          <span className="text-xs bg-orange-900/30 border border-orange-700/40 text-orange-300 rounded-full px-2.5 py-1">
+                            🎯 المراهنة: {q.min_wager ?? 0}–{q.max_wager ?? 1000} نقطة
+                          </span>
+                          <button onClick={() => setEditingWager({ question_id: q.id, min_wager: q.min_wager ?? 0, max_wager: q.max_wager ?? 1000 })}
+                            className="text-xs text-orange-400 hover:text-orange-300 border border-orange-800/40 rounded-lg px-2 py-0.5 hover:bg-orange-900/20 transition-colors">
+                            تعديل
+                          </button>
+                        </div>
+                      )}
 
                       <div className="mb-4">
                         <div className="text-xs text-emerald-500 uppercase tracking-wide font-medium mb-2">الإجابات الصحيحة</div>

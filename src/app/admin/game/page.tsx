@@ -62,6 +62,7 @@ interface Settings {
   helpline_same_person: HelplineSetting
   helpline_opposing_team: HelplineSetting
   helpline_wild: HelplineSetting
+  timer_duration?: number
 }
 
 const LABELS_AR = ['أ', 'ب', 'ج', 'د', 'هـ']
@@ -72,6 +73,7 @@ const DEFAULT_SETTINGS: Settings = {
   helpline_same_person: { cost: 100, multiplier_reduction: 0.5 },
   helpline_opposing_team: { cost: 75, multiplier_reduction: 0.5 },
   helpline_wild: { cost: 200, multiplier_reduction: 0.5 },
+  timer_duration: 45,
 }
 
 function playRingSound() {
@@ -109,6 +111,28 @@ function playTickSound() {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08)
     osc.start(ctx.currentTime)
     osc.stop(ctx.currentTime + 0.08)
+  } catch { /* ignore */ }
+}
+
+function playCoinSound() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+    const ctx = new AudioCtx()
+    const offsets: number[] = [0, 0.07]
+    offsets.forEach((offset, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'triangle'
+      osc.frequency.setValueAtTime(2200 - i * 400, ctx.currentTime + offset)
+      osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + offset + 0.18)
+      gain.gain.setValueAtTime(0.22, ctx.currentTime + offset)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.2)
+      osc.start(ctx.currentTime + offset)
+      osc.stop(ctx.currentTime + offset + 0.2)
+    })
   } catch { /* ignore */ }
 }
 
@@ -178,7 +202,8 @@ export default function GamePage() {
       const qId = session.current_state?.question_id
       if (qId !== prevQuestionIdRef.current) {
         prevQuestionIdRef.current = qId
-        setTimeLeft(45)
+        const duration = settings.timer_duration ?? 45
+        setTimeLeft(duration)
         if (timerRef.current) clearInterval(timerRef.current)
         timerRef.current = setInterval(() => {
           setTimeLeft(prev => {
@@ -198,11 +223,15 @@ export default function GamePage() {
       prevQuestionIdRef.current = undefined
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [session?.status, session?.current_state?.question_id])
+  }, [session?.status, session?.current_state?.question_id, settings.timer_duration])
 
   function spawnCoins(type: 'gain' | 'loss' | 'helpline', team: string) {
+    playCoinSound()
     const count = type === 'gain' ? 8 : type === 'loss' ? 5 : 3
-    const baseX = team === 'A' ? 100 : (typeof window !== 'undefined' ? window.innerWidth - 100 : 300)
+    // In RTL layout, Team A (🟢) is on the RIGHT, Team B (🔵) is on the LEFT
+    const baseX = team === 'A'
+      ? (typeof window !== 'undefined' ? window.innerWidth - 100 : 300)
+      : 100
     const baseY = 60
     const newCoins = Array.from({ length: count }, (_, i) => {
       let angle: number

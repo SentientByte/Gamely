@@ -49,14 +49,45 @@ export async function PUT(
       return NextResponse.json({ error: 'Question text is required' }, { status: 400 })
     }
 
-    const { personalized_template, reverse_template } = body
-    const result = db.prepare('UPDATE questions SET text = ?, personalized_template = ?, reverse_template = ? WHERE id = ?').run(text.trim(), personalized_template?.trim() || null, reverse_template?.trim() || null, id)
+    const { personalized_template, reverse_template, min_wager, max_wager } = body
+    const minW = typeof min_wager === 'number' ? min_wager : 0
+    const maxW = typeof max_wager === 'number' ? max_wager : 1000
+    const result = db.prepare('UPDATE questions SET text = ?, personalized_template = ?, reverse_template = ?, min_wager = ?, max_wager = ? WHERE id = ?').run(text.trim(), personalized_template?.trim() || null, reverse_template?.trim() || null, minW, maxW, id)
     if (result.changes === 0) {
       return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     }
 
     const question = db.prepare('SELECT * FROM questions WHERE id = ?').get(id)
     return NextResponse.json(question)
+  } catch {
+    return NextResponse.json({ error: 'Database error' }, { status: 500 })
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  if (!checkAuth(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const id = parseInt(params.id)
+  if (isNaN(id)) {
+    return NextResponse.json({ error: 'Invalid ID' }, { status: 400 })
+  }
+
+  try {
+    const body = await request.json()
+    const { min_wager, max_wager } = body
+    if (typeof min_wager !== 'number' || typeof max_wager !== 'number') {
+      return NextResponse.json({ error: 'min_wager and max_wager are required numbers' }, { status: 400 })
+    }
+    const result = db.prepare('UPDATE questions SET min_wager = ?, max_wager = ? WHERE id = ?').run(min_wager, max_wager, id)
+    if (result.changes === 0) {
+      return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+    }
+    return NextResponse.json({ success: true })
   } catch {
     return NextResponse.json({ error: 'Database error' }, { status: 500 })
   }

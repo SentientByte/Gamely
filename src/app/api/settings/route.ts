@@ -26,14 +26,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
 
-    const validKeys = ['helpline_remove_two', 'helpline_same_person', 'helpline_opposing_team', 'helpline_wild']
+    const helplineKeys = ['helpline_remove_two', 'helpline_same_person', 'helpline_opposing_team', 'helpline_wild']
     db.transaction(() => {
-      for (const key of validKeys) {
+      for (const key of helplineKeys) {
         if (body[key] !== undefined) {
           const val = body[key]
           if (typeof val.cost !== 'number' || typeof val.multiplier_reduction !== 'number') continue
           upsert.run(key, JSON.stringify({ cost: val.cost, multiplier_reduction: val.multiplier_reduction }))
         }
+      }
+      if (body.timer_duration !== undefined && typeof body.timer_duration === 'number' && body.timer_duration >= 10) {
+        upsert.run('timer_duration', JSON.stringify(body.timer_duration))
       }
     })()
 

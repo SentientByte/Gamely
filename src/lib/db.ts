@@ -121,6 +121,10 @@ function initDb(db: Database.Database) {
   try { db.exec(`ALTER TABLE custom_player_questions ADD COLUMN min_wager INTEGER DEFAULT 0`) } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE custom_player_questions ADD COLUMN max_wager INTEGER DEFAULT 1000`) } catch { /* already exists */ }
 
+  // Migrate: add wager range to standard questions
+  try { db.exec(`ALTER TABLE questions ADD COLUMN min_wager INTEGER DEFAULT 0`) } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE questions ADD COLUMN max_wager INTEGER DEFAULT 1000`) } catch { /* already exists */ }
+
   // Migrate: update team CHECK to allow UNASSIGNED (SQLite doesn't support ALTER COLUMN CHECK easily, skip)
 
   // Insert default questions if table is empty
@@ -166,11 +170,12 @@ function initDb(db: Database.Database) {
   }
 
   // Insert default settings if not present
-  const defaultSettings: Record<string, object> = {
+  const defaultSettings: Record<string, object | number> = {
     helpline_remove_two: { cost: 50, multiplier_reduction: 0.25 },
     helpline_same_person: { cost: 100, multiplier_reduction: 0.5 },
     helpline_opposing_team: { cost: 75, multiplier_reduction: 0.5 },
     helpline_wild: { cost: 200, multiplier_reduction: 0.5 },
+    timer_duration: 45,
   }
   const upsertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
   for (const [key, val] of Object.entries(defaultSettings)) {
