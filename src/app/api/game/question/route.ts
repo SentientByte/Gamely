@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     const session = db.prepare('SELECT * FROM game_sessions ORDER BY id DESC LIMIT 1').get() as {
       id: number; status: string; current_team: string; current_state: string; last_question_id: number | null
       wager_usage: string; steal_used_a: number; steal_used_b: number; used_question_topics: string
-      wild_used_a: number; wild_used_b: number
+      wild_used_count: number
     } | undefined
 
     if (!session) {
@@ -116,11 +116,12 @@ export async function POST(request: NextRequest) {
     const stealMaxWager = stealMaxWagerRow ? JSON.parse(stealMaxWagerRow.value) : 500
     const isSteal = !!is_steal && wager <= stealMaxWager && !stealUsed
 
-    // Validate wild
-    const wildUsed = session.current_team === 'A' ? session.wild_used_a : session.wild_used_b
+    // Validate wild — shared pool: can use as many times as there are wild questions
+    const wildUsedCount = session.wild_used_count || 0
+    const wildQuestionsTotal = (db.prepare('SELECT COUNT(*) as cnt FROM wild_questions').get() as { cnt: number }).cnt
     const wildMaxWagerRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('wild_max_wager') as { value: string } | undefined
     const wildMaxWager = wildMaxWagerRow ? JSON.parse(wildMaxWagerRow.value) : 500
-    const isWild = !!is_wild && !is_steal && wager <= wildMaxWager && !wildUsed
+    const isWild = !!is_wild && !is_steal && wager <= wildMaxWager && wildUsedCount < wildQuestionsTotal
 
     // Update wager usage
     if (!wagerUsage[session.current_team]) wagerUsage[session.current_team] = {}
@@ -164,7 +165,7 @@ export async function POST(request: NextRequest) {
         is_wild: true,
       }
 
-      db.prepare('UPDATE game_sessions SET status = ?, current_state = ?, wager_usage = ? WHERE id = ?')
+      db.prepare('UPDATE game_sessions SET status = ?, current_state = ?, wager_usage = ?, wild_used_count = wild_used_count + 1 WHERE id = ?')
         .run('questioning', JSON.stringify(newState), JSON.stringify(wagerUsage), session.id)
 
       return NextResponse.json({ question_text: wildQ.question_text, options, contestant_name: contestant.name, contestant_id: contestant.id, question_id: null, wager, reward_multiplier: rewardMultiplier })

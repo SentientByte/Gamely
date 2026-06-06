@@ -113,6 +113,7 @@ function initDb(db: Database.Database) {
     `ALTER TABLE game_sessions ADD COLUMN used_question_topics TEXT DEFAULT '[]'`,
     `ALTER TABLE game_sessions ADD COLUMN wild_used_a INTEGER DEFAULT 0`,
     `ALTER TABLE game_sessions ADD COLUMN wild_used_b INTEGER DEFAULT 0`,
+    `ALTER TABLE game_sessions ADD COLUMN wild_used_count INTEGER DEFAULT 0`,
   ]
   for (const sql of gameMigrations) {
     try { db.exec(sql) } catch { /* already exists */ }

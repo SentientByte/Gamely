@@ -106,14 +106,12 @@ export async function POST(request: NextRequest) {
           db.prepare('UPDATE game_sessions SET team_b_score = team_b_score + ? WHERE id = ?').run(opposingScoreChange, session.id)
         }
         if (isSteal) db.prepare('UPDATE game_sessions SET steal_used_a = 1 WHERE id = ?').run(session.id)
-        if (isWild) db.prepare('UPDATE game_sessions SET wild_used_a = 1 WHERE id = ?').run(session.id)
       } else {
         db.prepare('UPDATE game_sessions SET team_b_score = team_b_score + ? WHERE id = ?').run(scoreChange, session.id)
         if (opposingScoreChange !== 0) {
           db.prepare('UPDATE game_sessions SET team_a_score = team_a_score + ? WHERE id = ?').run(opposingScoreChange, session.id)
         }
         if (isSteal) db.prepare('UPDATE game_sessions SET steal_used_b = 1 WHERE id = ?').run(session.id)
-        if (isWild) db.prepare('UPDATE game_sessions SET wild_used_b = 1 WHERE id = ?').run(session.id)
       }
     })()
 

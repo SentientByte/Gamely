@@ -30,12 +30,14 @@ export async function GET(request: NextRequest) {
     }
 
     const currentState = JSON.parse(s.current_state || '{}')
+    const wildCount = (db.prepare('SELECT COUNT(*) as cnt FROM wild_questions').get() as { cnt: number }).cnt
 
     return NextResponse.json({
       session: {
         ...s,
         current_state: currentState,
-      }
+      },
+      wild_questions_count: wildCount,
     })
   } catch {
     return NextResponse.json({ error: 'Database error' }, { status: 500 })

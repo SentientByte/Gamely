@@ -46,8 +46,7 @@ interface Session {
   wager_usage: string
   steal_used_a: number
   steal_used_b: number
-  wild_used_a: number
-  wild_used_b: number
+  wild_used_count: number
 }
 
 interface Contestant {
@@ -157,6 +156,7 @@ export default function GamePage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [stealMode, setStealMode] = useState(false)
   const [wildMode, setWildMode] = useState(false)
+  const [wildQuestionsCount, setWildQuestionsCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [startScoreA, setStartScoreA] = useState(0)
@@ -178,6 +178,7 @@ export default function GamePage() {
       const res = await fetch('/api/game/state', { credentials: 'include' })
       const data = await res.json()
       setSession(data.session)
+      if (data.wild_questions_count !== undefined) setWildQuestionsCount(data.wild_questions_count)
     } catch { /* ignore */ }
   }, [])
 
@@ -454,9 +455,10 @@ export default function GamePage() {
   const stealUsed = currentTeam === 'A' ? (session?.steal_used_a || 0) : (session?.steal_used_b || 0)
   const stealMaxWager = settings.steal_max_wager ?? 500
   const canSteal = !stealUsed && selectedWager <= stealMaxWager && !wildMode
-  const wildUsed = currentTeam === 'A' ? (session?.wild_used_a || 0) : (session?.wild_used_b || 0)
+  const wildUsedCount = session?.wild_used_count || 0
+  const wildRemaining = Math.max(0, wildQuestionsCount - wildUsedCount)
   const wildMaxWager = settings.wild_max_wager ?? 500
-  const canWild = !wildUsed && selectedWager <= wildMaxWager && !stealMode
+  const canWild = wildRemaining > 0 && selectedWager <= wildMaxWager && !stealMode
 
   // Timer color
   const timerColor = timeLeft > 20 ? 'text-green-400' : timeLeft > 10 ? 'text-yellow-400' : 'text-red-400'
@@ -675,11 +677,18 @@ export default function GamePage() {
               {/* Wild option */}
               <div className={`mb-4 rounded-xl border p-3 transition-all ${wildMode ? 'bg-amber-900/40 border-amber-500/70' : 'bg-slate-700/40 border-slate-600/50'}`}>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-amber-300">👶 وضع الشخصية الخاصة</div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="font-bold text-amber-300">👶 وضع الشخصية الخاصة</div>
+                      {wildQuestionsCount > 0 && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${wildRemaining > 0 ? 'bg-amber-900/60 text-amber-300 border border-amber-600/50' : 'bg-slate-700 text-slate-500 border border-slate-600'}`}>
+                          {wildRemaining}/{wildQuestionsCount}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-400 mt-0.5">
                       صح: المراهنة +{Math.round((settings.wild_correct_bonus_pct ?? 0.5) * 100)}% إضافية • خطأ: تخسر المراهنة + المنافس يكسب {Math.round((settings.wild_wrong_opponent_pct ?? 0.5) * 100)}%
-                      {!canWild && wildUsed ? ' (مستخدم)' : !canWild && stealMode ? ' (لا يمكن مع السرقة)' : !canWild ? ` (متاح للمراهنات ≤${wildMaxWager} فقط)` : ''}
+                      {!canWild && wildRemaining === 0 ? ' (نفدت الأسئلة)' : !canWild && stealMode ? ' (لا يمكن مع السرقة)' : !canWild ? ` (متاح للمراهنات ≤${wildMaxWager} فقط)` : ''}
                     </div>
                   </div>
                   <button
