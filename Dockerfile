@@ -24,7 +24,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DB_PATH=/app/data/game.db
-ENV PORT=3000
+ENV PORT=3123
 ENV HOSTNAME=0.0.0.0
 
 RUN addgroup --system --gid 1001 nodejs && \
@@ -39,6 +39,6 @@ RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data /app/.next
 
 USER nextjs
 
-EXPOSE 3000
+EXPOSE 3123
 
 CMD ["npm", "start"]
