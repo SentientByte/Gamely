@@ -14,6 +14,7 @@ interface Settings {
   helpline_same_person: HelplineSetting
   helpline_opposing_team: HelplineSetting
   helpline_wild: HelplineSetting
+  timer_duration: number
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -21,6 +22,7 @@ const DEFAULT_SETTINGS: Settings = {
   helpline_same_person: { cost: 100, multiplier_reduction: 0.5 },
   helpline_opposing_team: { cost: 75, multiplier_reduction: 0.5 },
   helpline_wild: { cost: 200, multiplier_reduction: 0.5 },
+  timer_duration: 45,
 }
 
 const HELPLINE_INFO = [
@@ -61,7 +63,7 @@ export default function SettingsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(settings),
+        body: JSON.stringify({ ...settings }),
       })
       if (res.ok) {
         setSaved(true)
@@ -74,7 +76,8 @@ export default function SettingsPage() {
     }
   }
 
-  function updateSetting(key: keyof Settings, field: keyof HelplineSetting, value: number) {
+  type HelplineKey = 'helpline_remove_two' | 'helpline_same_person' | 'helpline_opposing_team' | 'helpline_wild'
+  function updateSetting(key: HelplineKey, field: keyof HelplineSetting, value: number) {
     setSettings(prev => ({
       ...prev,
       [key]: { ...prev[key], [field]: value },
@@ -110,8 +113,31 @@ export default function SettingsPage() {
           <div className="text-center text-slate-400 py-8">جاري التحميل...</div>
         ) : (
           <form onSubmit={handleSave} className="space-y-4">
+
+            {/* General Settings */}
+            <div className="border border-indigo-600/40 bg-indigo-900/10 rounded-xl p-5">
+              <h3 className="font-bold text-lg mb-4 text-indigo-300">⚙️ إعدادات عامة</h3>
+              <div>
+                <label className="text-slate-300 text-sm block mb-1">
+                  مدة العد التنازلي (ثانية) — الحالي: {settings.timer_duration}ث
+                </label>
+                <input
+                  type="number"
+                  value={settings.timer_duration}
+                  onChange={e => setSettings(prev => ({ ...prev, timer_duration: Math.max(10, Number(e.target.value)) }))}
+                  min={10}
+                  max={300}
+                  step={5}
+                  className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <p className="text-slate-500 text-xs mt-1">
+                  مدة السؤال قبل انتهاء الوقت (الافتراضي 45 ثانية، الحد الأدنى 10)
+                </p>
+              </div>
+            </div>
+
             {HELPLINE_INFO.map(({ key, label, color }) => {
-              const s = settings[key as keyof Settings]
+              const s = settings[key as HelplineKey]
               return (
                 <div key={key} className={`border rounded-xl p-5 ${colorMap[color]}`}>
                   <h3 className={`font-bold text-lg mb-4 ${labelColorMap[color]}`}>{label}</h3>
@@ -121,7 +147,7 @@ export default function SettingsPage() {
                       <input
                         type="number"
                         value={s.cost}
-                        onChange={e => updateSetting(key as keyof Settings, 'cost', Number(e.target.value))}
+                        onChange={e => updateSetting(key as HelplineKey, 'cost', Number(e.target.value))}
                         min={0}
                         step={25}
                         className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-500"
@@ -134,7 +160,7 @@ export default function SettingsPage() {
                       <input
                         type="number"
                         value={s.multiplier_reduction}
-                        onChange={e => updateSetting(key as keyof Settings, 'multiplier_reduction', Number(e.target.value))}
+                        onChange={e => updateSetting(key as HelplineKey, 'multiplier_reduction', Number(e.target.value))}
                         min={0}
                         max={0.75}
                         step={0.05}

@@ -141,24 +141,31 @@ export async function POST(request: NextRequest) {
     )
 
     // --- Standard questions ---
-    const allQuestions = db.prepare('SELECT id, text, personalized_template, reverse_template FROM questions ORDER BY id ASC').all() as Array<{ id: number; text: string; personalized_template: string | null; reverse_template: string | null }>
+    const allQuestions = db.prepare('SELECT id, text, personalized_template, reverse_template, min_wager, max_wager FROM questions ORDER BY id ASC').all() as Array<{ id: number; text: string; personalized_template: string | null; reverse_template: string | null; min_wager: number | null; max_wager: number | null }>
 
     const answeredIds = new Set(
       (db.prepare('SELECT question_id FROM answers WHERE contestant_id = ?').all(contestant_id) as Array<{ question_id: number }>)
         .map(r => r.question_id)
     )
 
-    // Available standard questions: answered by contestant, not used this turn for them, not used globally this session
+    // Available standard questions: answered by contestant, not used this turn for them, not used globally this session, within wager range
     let availableStd = allQuestions.filter(q =>
       answeredIds.has(q.id) &&
       !usedQuestionIds.has(q.id) &&
-      !usedTopics.includes(`q_${q.id}`)
+      !usedTopics.includes(`q_${q.id}`) &&
+      wager >= (q.min_wager ?? 0) &&
+      wager <= (q.max_wager ?? 1000)
     )
 
     // If globally all topics used, reset global filter for this contestant
     if (availableStd.length === 0 && availableCustom.length === 0) {
-      // Fallback: only filter by per-contestant used
-      availableStd = allQuestions.filter(q => answeredIds.has(q.id) && !usedQuestionIds.has(q.id))
+      // Fallback: only filter by per-contestant used and wager range
+      availableStd = allQuestions.filter(q =>
+        answeredIds.has(q.id) &&
+        !usedQuestionIds.has(q.id) &&
+        wager >= (q.min_wager ?? 0) &&
+        wager <= (q.max_wager ?? 1000)
+      )
     }
 
     // Prefer questions not recently used (last_question_id)
