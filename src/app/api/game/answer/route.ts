@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     const isSteal: boolean = currentState.is_steal || false
     const isWild: boolean = currentState.is_wild || false
 
-    function getSetting(key: string, def: number): number {
+    const getSetting = (key: string, def: number): number => {
       const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
       return row ? JSON.parse(row.value) : def
     }
